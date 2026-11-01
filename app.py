@@ -51,7 +51,14 @@ SYSTEM_BASE = (
     "Respondes siempre en español, salvo que el usuario pida otro idioma. "
     "Usa Markdown cuando ayude. No inventes información. "
     "Tienes memoria de largo plazo proporcionada por el sistema: úsala solo cuando sea relevante. "
-    "Si una memoria contradice el mensaje actual del usuario, prioriza el mensaje actual."
+    "Si una memoria contradice el mensaje actual del usuario, prioriza el mensaje actual. "
+    "ARCHIVOS: la aplicación puede entregar archivos descargables. "
+    "Si el usuario pide un archivo de código o datos (HTML, Python, JS, CSS, JSON, CSV, SQL, TXT, etc.), "
+    "entrega el contenido COMPLETO, sin recortar ni usar '...', dentro de un único bloque de código cuya primera línea sea "
+    "```archivo:nombre.ext (por ejemplo ```archivo:index.html); la aplicación mostrará un botón para descargarlo. "
+    "Si pide un documento Word, PDF, Excel o PowerPoint, escribe el contenido en Markdown con títulos (#, ##) y listas "
+    "(en PowerPoint usa un título ## por diapositiva); la aplicación ofrece botones para descargarlo en esos formatos. "
+    "Nunca digas que no puedes crear archivos."
 )
 MAX_MENSAJES = 16
 MAX_CARACTERES = 70000
@@ -1082,6 +1089,33 @@ def api_export():
             wb=Workbook(); ws=wb.active; ws.title='TAMPY';
             for i,line in enumerate(text.splitlines(),1): ws.cell(i,1,md_to_plain(line))
             ws.column_dimensions['A'].width=120; bio=io.BytesIO(); wb.save(bio); bio.seek(0); mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; ext='xlsx'
+        elif fmt=='pptx':
+            from pptx import Presentation
+            from pptx.util import Pt
+            slides=[]; cur=None
+            for line in text.splitlines():
+                ln=line.strip()
+                if not ln or re.match(r'^```',ln): continue
+                m=re.match(r'^#{1,3}\s+(.*)',ln)
+                if m:
+                    cur={'t':md_to_plain(m.group(1)).strip() or 'TAMPY','b':[]}; slides.append(cur)
+                else:
+                    if cur is None:
+                        cur={'t':name.replace('_',' '),'b':[]}; slides.append(cur)
+                    cur['b'].append(md_to_plain(re.sub(r'^([-*+]|\d+[.)])\s+','',ln)).strip())
+            if not slides: return jsonify(error='No hay contenido para la presentación.'),400
+            prs=Presentation()
+            for sl in slides:
+                partes=[sl['b'][i:i+6] for i in range(0,len(sl['b']),6)] or [[]]
+                for n,grupo in enumerate(partes):
+                    sd=prs.slides.add_slide(prs.slide_layouts[1])
+                    sd.shapes.title.text=sl['t']+(f' ({n+1})' if n else '')
+                    tf=sd.placeholders[1].text_frame
+                    for i,b in enumerate(grupo):
+                        para=tf.paragraphs[0] if i==0 else tf.add_paragraph()
+                        para.text=b
+                        for r in para.runs: r.font.size=Pt(20)
+            bio=io.BytesIO(); prs.save(bio); bio.seek(0); mime='application/vnd.openxmlformats-officedocument.presentationml.presentation'; ext='pptx'
         else: return jsonify(error='Formato no soportado.'),400
         return send_file(bio,as_attachment=True,download_name=f'{name}.{ext}',mimetype=mime)
     except Exception as e:
