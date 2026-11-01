@@ -148,6 +148,12 @@ footer { padding: 0 16px calc(14px + env(safe-area-inset-bottom, 0px)); }
 .archivo-listo .descargar { border:0; border-radius:9px; padding:7px 10px; background:var(--accent); color:#fff; cursor:pointer; font-weight:600; }
 .archivo-listo .descargar:hover { filter:brightness(.94); }
 .fila { display: flex; align-items: flex-end; gap: 6px; }
+.copiar.bajar { right: 70px; }
+.tarjeta-adj { display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:8px 12px; text-align:left; max-width:260px; }
+.tarjeta-adj .ic { font-size:24px; }
+.tarjeta-adj .nm { display:block; font-size:13px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:170px; }
+.tarjeta-adj small { color:var(--muted); font-size:11px; }
+.previa.subiendo { display:flex; align-items:center; justify-content:center; min-height:94px; color:var(--muted); font-size:11px; padding:8px; text-align:center; }
 textarea {
   flex: 1; background: transparent; border: 0; outline: 0; resize: none; color: var(--text);
   font: inherit; font-size: 16px; line-height: 1.5; max-height: 200px; padding: 8px 4px;
@@ -227,7 +233,7 @@ textarea::placeholder { color: var(--muted); }
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>
       </button>
       <input type="file" id="archivo" multiple hidden
-        accept="image/*,.pdf,.docx,.xlsx,.xlsm,.csv,.tsv,.txt,.md,.json,.xml,.html,.css,.js,.ts,.py,.java,.c,.cpp,.cs,.php,.sql,.yaml,.yml,.log">
+        accept="image/*,.pdf,.docx,.pptx,.xlsx,.xlsm,.xls,.csv,.tsv,.txt,.md,.json,.xml,.html,.css,.js,.ts,.py,.java,.c,.cpp,.cs,.php,.sql,.yaml,.yml,.log">
       <textarea id="texto" rows="1" placeholder="Escribe tu mensaje a TAMPY..."></textarea>
       <button type="button" class="icono" id="enviar" title="Enviar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
@@ -245,7 +251,7 @@ const STORAGE_MODE = {{ storage|tojson }};
 const $ = id => document.getElementById(id);
 const safeUUID = () => (window.crypto && typeof window.crypto.randomUUID === 'function') ? window.crypto.randomUUID() : ('id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
 
-let historial = [], pendientes = [], ocupado = false, conversationId = null;
+let historial = [], pendientes = [], subiendo = [], ocupado = false, conversationId = null;
 let chat, scroll, texto, btnEnviar, previas, caja, inputArchivo;
 
 function initTampy(){
@@ -278,22 +284,29 @@ function renderMarkdown(md){
     const html=DOMPurify.sanitize(marked.parse(md,{breaks:true}));
     const cont=document.createElement('div');cont.innerHTML=html;
     cont.querySelectorAll('a').forEach(a=>{a.target='_blank';a.rel='noopener noreferrer'});
-    cont.querySelectorAll('pre').forEach(pre=>{const b=document.createElement('button');b.type='button';b.className='copiar';b.textContent='Copiar';b.onclick=()=>{navigator.clipboard?.writeText(pre.innerText.replace(/Copiar$/,'').trim());b.textContent='¡Copiado!';setTimeout(()=>b.textContent='Copiar',1500)};pre.appendChild(b)});return cont;
+    cont.querySelectorAll('pre').forEach(pre=>{const cod=pre.querySelector('code');const b=document.createElement('button');b.type='button';b.className='copiar';b.textContent='Copiar';b.onclick=()=>{navigator.clipboard?.writeText((cod||pre).textContent.trim());b.textContent='¡Copiado!';setTimeout(()=>b.textContent='Copiar',1500)};pre.appendChild(b);const d=document.createElement('button');d.type='button';d.className='copiar bajar';d.textContent='⬇ Descargar';d.onclick=()=>{const i=infoCodigo(cod);descargarBlob(new Blob([(cod||pre).textContent],{type:'text/plain;charset=utf-8'}),i.nombre,false)};pre.appendChild(d)});return cont;
   }
   const cont=document.createElement('div');cont.style.whiteSpace='pre-wrap';cont.textContent=md;return cont;
 }
+const EXT_LANG={html:'html',xml:'xml',css:'css',javascript:'js',js:'js',typescript:'ts',ts:'ts',python:'py',py:'py',json:'json',csv:'csv',sql:'sql',bash:'sh',sh:'sh',shell:'sh',yaml:'yaml',yml:'yml',markdown:'md',md:'md',java:'java',c:'c',cpp:'cpp',csharp:'cs',cs:'cs',php:'php',ruby:'rb',go:'go',rust:'rs',text:'txt',txt:'txt',plaintext:'txt'};
+function infoCodigo(cod){
+  const cls=[...(cod&&cod.classList||[])].find(c=>c.startsWith('language-'));const lang=cls?cls.slice(9):'';
+  if(lang.toLowerCase().startsWith('archivo:')){const n=lang.slice(8).replace(/[^\w.\-]/g,'_');if(n)return {nombre:n}}
+  return {nombre:'tampy_codigo.'+(EXT_LANG[lang.toLowerCase()]||'txt')};
+}
 function quitarBienvenida(){const b=$('bienvenida');if(b)b.remove()}
-function agregarUsuario(t,adj){quitarBienvenida();const div=document.createElement('div');div.className='msg user';const c=document.createElement('div');c.className='cuerpo';if(adj.length){const f=document.createElement('div');f.className='adjuntos-msg';adj.forEach(a=>{if(a.tipo==='imagen'){const im=document.createElement('img');im.src=a.dataUrl;f.appendChild(im)}else{const x=document.createElement('div');x.className='chip';x.textContent='📄 '+a.nombre;x.style.paddingRight='10px';f.appendChild(x)}});c.appendChild(f)}if(t)c.appendChild(document.createTextNode(t));div.appendChild(c);chat.appendChild(div);bajar()}
-function agregarBot(contenido,esError=false){const div=document.createElement('div');div.className='msg bot';div.innerHTML=logoHTML();const c=document.createElement('div');c.className='cuerpo'+(esError?' error':'');if(esError)c.textContent=contenido;else{c.appendChild(renderMarkdown(contenido));const ex=document.createElement('div');ex.className='exportes';[['txt','TXT'],['docx','Word'],['pdf','PDF'],['xlsx','Excel'],['html','HTML']].forEach(([f,l])=>{const b=document.createElement('button');b.type='button';b.textContent='⬇ '+l;b.onclick=()=>exportar(contenido,f);ex.appendChild(b)});c.appendChild(ex)}div.appendChild(c);chat.appendChild(div);bajar();return div}
+function agregarUsuario(t,adj){quitarBienvenida();const div=document.createElement('div');div.className='msg user';const c=document.createElement('div');c.className='cuerpo';if(adj.length){const f=document.createElement('div');f.className='adjuntos-msg';adj.forEach(a=>{if(a.tipo==='imagen'){const im=document.createElement('img');im.src=a.dataUrl;f.appendChild(im)}else{const x=document.createElement('div');x.className='tarjeta-adj';x.innerHTML='<span class="ic">'+iconoArchivo(a.nombre)+'</span><div><span class="nm">'+esc(a.nombre)+'</span><small>'+esc((a.analisis&&a.analisis.tipo||a.nombre.split('.').pop()||'archivo').toUpperCase()+(a.size?' • '+formatoBytes(a.size):''))+'</small></div>';f.appendChild(x)}});c.appendChild(f)}if(t)c.appendChild(document.createTextNode(t));div.appendChild(c);chat.appendChild(div);bajar()}
+function agregarBot(contenido,esError=false){const div=document.createElement('div');div.className='msg bot';div.innerHTML=logoHTML();const c=document.createElement('div');c.className='cuerpo'+(esError?' error':'');if(esError)c.textContent=contenido;else{c.appendChild(renderMarkdown(contenido));const ex=document.createElement('div');ex.className='exportes';[['txt','TXT'],['docx','Word'],['pdf','PDF'],['xlsx','Excel'],['pptx','PowerPoint'],['html','HTML']].forEach(([f,l])=>{const b=document.createElement('button');b.type='button';b.textContent='⬇ '+l;b.onclick=()=>exportar(contenido,f);ex.appendChild(b)});c.appendChild(ex)}div.appendChild(c);chat.appendChild(div);bajar();return div}
 function agregarEscribiendo(){const d=document.createElement('div');d.className='msg bot';d.innerHTML=logoHTML()+'<div class="cuerpo"><span class="puntos"><i></i><i></i><i></i></span></div>';chat.appendChild(d);bajar();return d}
 async function api(url,opt={}){opt.headers=Object.assign({},opt.headers||{});try{const clave=sessionStorage.getItem('tampy_clave');if(clave)opt.headers['X-Clave']=clave}catch(e){}let r=await fetch(url,opt);if(r.status===401&&REQUIERE_CLAVE){const n=prompt('Clave de acceso de TAMPY:');if(!n)return r;sessionStorage.setItem('tampy_clave',n);opt.headers['X-Clave']=n;r=await fetch(url,opt)}return r}
 function profileHeader(){let p='public';try{p=localStorage.getItem('tampy_profile')||p}catch(e){}return {'X-Tampy-Profile':p}}
 function redimensionarImagen(file){return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{const M=1568,s=Math.min(1,M/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL('image/jpeg',.85))};im.onerror=()=>rej(new Error('No pude abrir '+file.name));im.src=u})}
-async function procesarArchivos(lista){for(const file of lista){if(pendientes.length>=10){alert('Máximo 10 archivos o imágenes por mensaje.');break}try{if(file.type.startsWith('image/')){pendientes.push({tipo:'imagen',nombre:file.name||'imagen.jpg',size:file.size,dataUrl:await redimensionarImagen(file)})}else{const fd=new FormData();fd.append('archivo',file);const r=await api('/api/archivo',{method:'POST',body:fd});const d=await r.json();if(!r.ok)throw new Error(d.error);pendientes.push({tipo:'archivo',id:d.id,nombre:d.nombre,size:file.size,texto:d.texto,truncado:d.truncado,analisis:d.analisis})}}catch(e){alert(e.message)}}pintarPrevias()}
+async function procesarArchivos(lista){for(const file of lista){if(pendientes.length>=10){alert('Máximo 10 archivos o imágenes por mensaje.');break}try{if(file.type.startsWith('image/')){pendientes.push({tipo:'imagen',nombre:file.name||'imagen.jpg',size:file.size,dataUrl:await redimensionarImagen(file)})}else{subiendo.push(file.name);pintarPrevias();const fd=new FormData();fd.append('archivo',file);let r,d;try{r=await api('/api/archivo',{method:'POST',body:fd});d=await r.json()}finally{subiendo.splice(subiendo.indexOf(file.name),1)}if(!r.ok)throw new Error(d.error);pendientes.push({tipo:'archivo',id:d.id,nombre:d.nombre,size:file.size,texto:d.texto,truncado:d.truncado,analisis:d.analisis})}}catch(e){alert(e.message)}}pintarPrevias()}
 function iconoArchivo(nombre){const e=(nombre.split('.').pop()||'').toLowerCase();return ({xlsx:'📊',xlsm:'📊',xls:'📊',csv:'📊',pdf:'📕',docx:'📘',pptx:'📙',txt:'📄',md:'📝',json:'🧾',js:'🟨',py:'🐍',html:'🌐',css:'🎨'}[e]||'📎')}
 function formatoBytes(n){if(!n)return '';if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
 function pintarPrevias(){
   previas.innerHTML='';
+  subiendo.forEach(n=>{const u=document.createElement('div');u.className='previa subiendo';u.textContent='⏳ Subiendo '+n+'...';previas.appendChild(u)});
   if(!pendientes.length)return;
   const contador=document.createElement('div');contador.className='adjuntos-contador';contador.textContent=`${pendientes.length} archivo${pendientes.length===1?'':'s'} preparado${pendientes.length===1?'':'s'} para enviar`;previas.appendChild(contador);
   pendientes.forEach((a,i)=>{
@@ -331,7 +344,7 @@ async function crearDashboardZip(a){
 }
 async function procesarArchivo(a,instruccion){
   try{
-    const promptText=(instruccion||prompt('¿Qué quieres que TAMPY corrija o modifique en este archivo?','Ejemplo: elimina los registros duplicados y corrige los valores negativos en la columna COSTO.'))||'').trim();
+    const promptText=(instruccion||prompt('¿Qué quieres que TAMPY corrija o modifique en este archivo?','Ejemplo: elimina los registros duplicados y corrige los valores negativos en la columna COSTO.')||'').trim();
     if(!promptText)return;
     const fd=new FormData();fd.append('file_id',a.id);fd.append('instruccion',promptText);
     const r=await api('/api/archivo/procesar',{method:'POST',body:fd});
@@ -372,6 +385,7 @@ async function crearLanding(){
 async function guardarConversacion(){if(!historial.length)return;try{const title=(historial.find(m=>m.role==='user')?.content||'Nueva conversación');const t=typeof title==='string'?title.replace(/\s+/g,' ').slice(0,70):'Conversación';const r=await api('/api/conversations',{method:'POST',headers:{'Content-Type':'application/json',...profileHeader()},body:JSON.stringify({id:conversationId,title:t,mensajes:historial})});if(r.ok)localStorage.setItem('tampy_conversation_id',conversationId);else console.warn('No se pudo guardar la conversación',await r.text())}catch(e){console.warn('No se pudo guardar la conversación:',e)}}
 async function enviar(){
   if(ocupado)return;
+  if(subiendo.length){alert('Espera a que termine de subir el archivo.');return}
   const msg=texto.value.trim(); if(!msg&&!pendientes.length)return;
   const adj=pendientes.slice(); pendientes=[]; pintarPrevias();
   const imgs=adj.filter(a=>a.tipo==='imagen'),files=adj.filter(a=>a.tipo==='archivo');let body='';
@@ -396,3 +410,4 @@ if(document.readyState==='loading') document.addEventListener('DOMContentLoaded'
 </script>
 </body>
 </html>
+
