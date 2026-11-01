@@ -531,6 +531,14 @@ def api_archivo():
     path.write_bytes(raw)
     return jsonify(id=file_id,nombre=f.filename,texto=texto,truncado=truncado,analisis=analisis)
 
+def _leer_analisis(fa):
+    """Lee el análisis JSON que ya calculó el navegador al subir el archivo (evita volver a procesar un Excel pesado)."""
+    a=json.loads(fa.read().decode('utf-8'))
+    if not isinstance(a,dict) or not isinstance(a.get('hojas'),list):
+        raise ValueError('Análisis inválido. Vuelve a subir el archivo.')
+    a['nombre']=str(a.get('nombre') or 'archivo.xlsx')[:150]
+    return a
+
 def _dashboard_html(analisis, titulo=None):
     import html as _html, json as _json
     titulo=titulo or f"Dashboard — {analisis.get('nombre','Archivo')}"
@@ -964,11 +972,15 @@ def api_dashboard_multi():
         files=request.files.getlist('archivos')
         ids=request.form.getlist('file_ids')
         items=[]
+        for fa in request.files.getlist('analisis')[:10]:
+            try: items.append(_leer_analisis(fa))
+            except Exception: log.exception('Análisis inválido en dashboard multi')
+        files=files[:max(0,10-len(items))]
         for f in files[:10]:
             ext=f.filename.lower().rsplit('.',1)[-1] if '.' in f.filename else ''
             if ext not in ('xlsx','xlsm','xls','csv'): continue
             raw=f.read(); _,_,a=extraer_texto(f.filename,raw); items.append(a)
-        for fid in ids[:10-len(items)]:
+        for fid in ids[:max(0,10-len(items))]:
             path=_artifact_path(fid)
             if path:
                 raw=path.read_bytes(); nombre=path.name.split('_',1)[1] if '_' in path.name else path.name
@@ -1008,7 +1020,10 @@ def api_dashboard():
     try:
         f=request.files.get('archivo')
         file_id=(request.form.get('file_id') or '').strip()
-        if f and f.filename:
+        fa=request.files.get('analisis'); a=None
+        if fa:
+            a=_leer_analisis(fa); nombre=a['nombre']
+        elif f and f.filename:
             raw=f.read(); nombre=f.filename
         elif file_id:
             path=_artifact_path(file_id)
@@ -1018,7 +1033,7 @@ def api_dashboard():
             return jsonify(error='Adjunta un Excel o CSV.'),400
         ext=nombre.lower().rsplit('.',1)[-1]
         if ext not in ('xlsx','xlsm','xls','csv'): return jsonify(error='El dashboard automático requiere XLSX, XLSM, XLS o CSV.'),400
-        _,_,a=extraer_texto(nombre,raw)
+        if a is None: _,_,a=extraer_texto(nombre,raw)
         html=_dashboard_html(a)
         bio=io.BytesIO(html.encode('utf-8'))
         return send_file(bio,as_attachment=True,download_name=re.sub(r'[^A-Za-z0-9_-]','_',Path(nombre).stem) + '_dashboard.html',mimetype='text/html; charset=utf-8')
@@ -1032,7 +1047,10 @@ def api_dashboard_zip():
     import zipfile
     try:
         f=request.files.get('archivo'); file_id=(request.form.get('file_id') or '').strip()
-        if f and f.filename:
+        fa=request.files.get('analisis'); a=None
+        if fa:
+            a=_leer_analisis(fa); nombre=a['nombre']
+        elif f and f.filename:
             raw=f.read(); nombre=f.filename
         elif file_id:
             path=_artifact_path(file_id)
@@ -1041,7 +1059,8 @@ def api_dashboard_zip():
         else: return jsonify(error='Adjunta un Excel o CSV.'),400
         ext=nombre.lower().rsplit('.',1)[-1]
         if ext not in ('xlsx','xlsm','xls','csv'): return jsonify(error='El ZIP de dashboard requiere XLSX, XLS, XLSM o CSV.'),400
-        _,_,a=extraer_texto(nombre,raw); dashboard=_dashboard_html(a)
+        if a is None: _,_,a=extraer_texto(nombre,raw)
+        dashboard=_dashboard_html(a)
         bio=io.BytesIO()
         with zipfile.ZipFile(bio,'w',zipfile.ZIP_DEFLATED) as z:
             base=re.sub(r'[^A-Za-z0-9_-]','_',Path(nombre).stem)
