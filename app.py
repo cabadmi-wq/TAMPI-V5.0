@@ -21,7 +21,8 @@ logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("tampy")
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 30 * 1024 * 1024
+LIMITE_MB = 100
+app.config["MAX_CONTENT_LENGTH"] = LIMITE_MB * 1024 * 1024
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 CLAVE_ACCESO = os.environ.get("TAMPY_CLAVE", "")
@@ -231,68 +232,88 @@ def _valor_texto(v):
     if isinstance(v, float) and v.is_integer(): return str(int(v))
     return str(v).strip()
 
+_NUM_RE = re.compile(r'^[\s$]*[-+]?[\d,]*\.?\d+(?:[eE][-+]?\d+)?\s*$')
+
+def _a_numero(v):
+    """Convierte una celda a número (o None) sin lanzar excepciones costosas."""
+    if v is None or isinstance(v, bool): return None
+    if isinstance(v, (int, float)): return float(v)
+    if isinstance(v, str) and _NUM_RE.match(v):
+        try: return float(v.replace(",", "").replace("$", "").strip())
+        except Exception: return None
+    return None
+
 def analizar_excel(nombre, datos):
-    """Analiza XLSX/XLSM localmente sin enviar el libro completo a Groq."""
+    """Analiza XLSX/XLSM en UNA sola pasada (streaming): memoria casi constante, apto para archivos grandes.
+    Devuelve la misma estructura que antes."""
     from openpyxl import load_workbook
-    libro = load_workbook(io.BytesIO(datos), read_only=True, data_only=True)
+    libro = load_workbook(io.BytesIO(datos), read_only=True, data_only=True, keep_links=False)
     hojas = []
     contexto = [f"ARCHIVO EXCEL: {nombre}", f"HOJAS: {len(libro.worksheets)}"]
     total_filas = 0
     for hoja in list(libro.worksheets)[:20]:
-        rows = []
-        nonempty = 0
-        headers = []
+        headers = []; first_len = 0; maxlen = 0; nonempty = 0; ndata = 0
+        muestra = []; stats = {}; freq = {}; overflow = set()
         for i, fila in enumerate(hoja.iter_rows(values_only=True)):
             vals = [_valor_texto(v) for v in fila]
             if not any(vals):
                 continue
+            nonempty += 1
+            maxlen = max(maxlen, len(vals))
+            if nonempty == 1:
+                first_len = len(vals)
             if i == 0:
                 headers = vals
-            rows.append(vals)
-            nonempty += 1
-            if len(rows) >= MAX_FILAS_ANALISIS:
+            else:
+                ndata += 1
+                if len(muestra) < 30: muestra.append(vals)
+                for j, raw in enumerate(fila):
+                    n = _a_numero(raw)
+                    if n is not None:
+                        st = stats.get(j)
+                        if st is None: stats[j] = [1, n, n, n]
+                        else:
+                            st[0] += 1; st[1] += n
+                            if n < st[2]: st[2] = n
+                            if n > st[3]: st[3] = n
+                for j in range(min(len(vals), 30)):
+                    v = vals[j]
+                    if v == "" or j in overflow: continue
+                    f = freq.setdefault(j, {})
+                    f[v] = f.get(v, 0) + 1
+                    if len(f) > 100:
+                        overflow.add(j); del freq[j]
+            if nonempty >= MAX_FILAS_ANALISIS:
                 break
-        data_rows = rows[1:] if headers else rows
-        if not headers and rows:
-            headers = [f"Columna {i+1}" for i in range(len(rows[0]))]
-        ncols = max([len(headers)] + [len(r) for r in rows] + [0])
-        headers = (headers + [f"Columna {i+1}" for i in range(ncols-len(headers))])[:ncols]
+        if not headers and nonempty:
+            headers = [f"Columna {k+1}" for k in range(first_len)]
+        ncols = max(len(headers), maxlen, 0)
+        headers = (headers + [f"Columna {k+1}" for k in range(ncols-len(headers))])[:ncols]
         numeric = []
         for j in range(ncols):
-            nums=[]
-            for r in data_rows:
-                if j < len(r):
-                    try:
-                        x=float(str(r[j]).replace(",", "").replace("$","").strip())
-                        nums.append(x)
-                    except Exception:
-                        pass
-            if len(nums) >= max(3, int(len(data_rows)*0.5)):
-                numeric.append({
-                    "column": headers[j] or f"Columna {j+1}",
-                    "count": len(nums),
-                    "sum": round(sum(nums),2),
-                    "avg": round(sum(nums)/len(nums),2),
-                    "min": round(min(nums),2),
-                    "max": round(max(nums),2)
-                })
-        categorical=[]
-        for j in range(min(ncols,30)):
-            vals=[r[j] for r in data_rows if j<len(r) and r[j]!=""]
-            if vals and len(set(vals)) <= min(100, max(10,int(len(vals)*.5))):
-                freq={}
-                for v in vals: freq[v]=freq.get(v,0)+1
-                top=sorted(freq.items(),key=lambda x:x[1],reverse=True)[:10]
-                categorical.append({"column":headers[j] or f"Columna {j+1}","unique":len(set(vals)),"top":[{"value":str(k),"count":v} for k,v in top]})
-        muestra=[dict(zip(headers, r + [""]*(ncols-len(r)))) for r in data_rows[:30]]
-        hoja_info={"name":hoja.title,"rows":len(data_rows),"columns":ncols,"headers":headers,"numeric":numeric[:15],"categorical":categorical[:15],"sample":muestra}
+            st = stats.get(j)
+            if st and st[0] >= max(3, int(ndata*0.5)):
+                numeric.append({"column": headers[j] or f"Columna {j+1}", "count": st[0], "sum": round(st[1],2),
+                                "avg": round(st[1]/st[0],2), "min": round(st[2],2), "max": round(st[3],2)})
+        categorical = []
+        for j in range(min(ncols, 30)):
+            f = freq.get(j)
+            if not f: continue
+            nv = sum(f.values())
+            if len(f) <= min(100, max(10, int(nv*.5))):
+                top = sorted(f.items(), key=lambda x: x[1], reverse=True)[:10]
+                categorical.append({"column": headers[j] or f"Columna {j+1}", "unique": len(f), "top": [{"value": str(k), "count": v} for k, v in top]})
+        muestra = [dict(zip(headers, r + [""]*(ncols-len(r)))) for r in muestra]
+        hoja_info = {"name": hoja.title, "rows": ndata, "columns": ncols, "headers": headers, "numeric": numeric[:15], "categorical": categorical[:15], "sample": muestra}
         hojas.append(hoja_info)
-        total_filas += len(data_rows)
-        contexto.append(f"Hoja '{hoja.title}': {len(data_rows)} filas, {ncols} columnas.")
+        total_filas += ndata
+        contexto.append(f"Hoja '{hoja.title}': {ndata} filas, {ncols} columnas.")
         if numeric:
             contexto.append("  Métricas: " + "; ".join(f"{x['column']} suma={x['sum']} promedio={x['avg']} min={x['min']} max={x['max']}" for x in numeric[:8]))
         if categorical:
             contexto.append("  Categorías: " + "; ".join(f"{x['column']} únicos={x['unique']}" for x in categorical[:6]))
+    try: libro.close()
+    except Exception: pass
     contexto.append(f"TOTAL FILAS DE DATOS: {total_filas}")
     return {
         "tipo":"excel","nombre":nombre,"hojas":hojas,"total_filas":total_filas,
@@ -420,6 +441,9 @@ def consultar(mensajes):
     raise RuntimeError(f'Ningún modelo configurado está disponible en Groq. Último error: {ultimo}')
 
 
+@app.errorhandler(413)
+def _archivo_muy_grande(e): return jsonify(error=f'El archivo supera el límite de {LIMITE_MB} MB.'),413
+
 @app.route('/')
 def index(): return render_template('index.html',requiere_clave=bool(CLAVE_ACCESO),storage=db_kind())
 @app.route('/salud')
@@ -495,7 +519,7 @@ def api_archivo():
     f=request.files.get('archivo')
     if not f or not f.filename: return jsonify(error='No llegó ningún archivo.'),400
     raw=f.read()
-    if len(raw) > app.config["MAX_CONTENT_LENGTH"]: return jsonify(error='El archivo supera el límite de 30 MB.'),413
+    if len(raw) > app.config["MAX_CONTENT_LENGTH"]: return jsonify(error=f'El archivo supera el límite de {LIMITE_MB} MB.'),413
     try:
         texto,truncado,analisis=extraer_texto(f.filename,raw)
     except Exception as e:
