@@ -22,7 +22,8 @@ log = logging.getLogger("tampy")
 
 app = Flask(__name__)
 LIMITE_MB = 100
-MAX_TOKENS_RESPUESTA = int(os.environ.get('MAX_TOKENS', '6000'))
+MAX_TOKENS_RESPUESTA = int(os.environ.get('MAX_TOKENS', '4500'))        # Groq gratis: 8000 tokens/minuto por modelo
+MAX_TOKENS_OTROS = int(os.environ.get('MAX_TOKENS_OTROS', '8000'))      # Gemini / Cerebras / etc. toleran respuestas más largas
 app.config["MAX_CONTENT_LENGTH"] = LIMITE_MB * 1024 * 1024
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -42,6 +43,7 @@ MODELOS_TEXTO = [m for m in [
     os.environ.get("MODELO_TEXTO"),
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
+    "llama-3.3-70b-versatile",   # en Groq cada modelo tiene su propio límite: si uno se agota, se usa el siguiente
 ] if m]
 MODELOS_VISION = [m for m in [
     os.environ.get("MODELO_VISION"),
@@ -153,6 +155,7 @@ except Exception:
 
 
 def save_conversation(cid, title, messages):
+    _CACHE_RECIENTES.clear()
     pid = profile_id(); ts = now(); payload = json.dumps(messages, ensure_ascii=False)
     if USE_POSTGRES:
         with pg_conn() as c:
@@ -187,7 +190,58 @@ def get_conversation(cid):
     d=dict(r); d["messages"]=json.loads(d["messages"]) if isinstance(d["messages"],str) else d["messages"]; return d
 
 
+# ================= Memoria de conversaciones anteriores =================
+_CACHE_RECIENTES = {}
+
+def _lineas_conversacion(msgs, maximo=6):
+    out=[]
+    for m in (msgs or [])[-8:]:
+        c=m.get('content')
+        if isinstance(c,list): c=' '.join(p.get('text','') for p in c if isinstance(p,dict) and p.get('type')=='text')
+        c=str(c or '')
+        c=re.sub(r'\[Archivo adjunto:[^\]]*\][\s\S]*?\[Fin del archivo\]',' [archivo adjunto] ',c)
+        c=re.sub(r'```archivo:\s*([^\s`]+)[\s\S]*?(```|$)',r' [archivo generado: \1] ',c)
+        c=re.sub(r'```[\s\S]*?```',' [código] ',c)
+        c=re.sub(r'\s+',' ',c).strip()
+        if c: out.append(('Usuario: ' if m.get('role')=='user' else 'TAMPY: ')+c[:220])
+    return out[-maximo:]
+
+def recientes_contexto(exclude_id=None, max_convs=5, max_chars=3000):
+    """Resumen de los últimos chats del usuario para que un chat nuevo recuerde lo anterior."""
+    try:
+        pid=profile_id(); k=pid; hit=_CACHE_RECIENTES.get(k)
+        if hit and _time.time()-hit[0]<45: filas=hit[1]
+        else:
+            if USE_POSTGRES:
+                with pg_conn() as c: filas=[dict(r) for r in c.execute("SELECT id,title,messages FROM conversations WHERE profile_id=%s ORDER BY updated_at DESC LIMIT 8",(pid,)).fetchall()]
+            else:
+                with sqlite_conn() as c: filas=[dict(r) for r in c.execute("SELECT id,title,messages FROM conversations WHERE profile_id=? ORDER BY updated_at DESC LIMIT 8",(pid,)).fetchall()]
+            _CACHE_RECIENTES[k]=(_time.time(),filas)
+        bloques=[]; total=0
+        for f in filas:
+            if exclude_id and f['id']==exclude_id: continue
+            msgs=json.loads(f['messages']) if isinstance(f['messages'],str) else f['messages']
+            lineas=_lineas_conversacion(msgs)
+            if not lineas: continue
+            b='### '+str(f['title'])[:80]+'\n'+'\n'.join(lineas)
+            if total+len(b)>max_chars: break
+            bloques.append(b); total+=len(b)
+            if len(bloques)>=max_convs: break
+        if not bloques: return ''
+        return "\n\nCONVERSACIONES ANTERIORES DEL USUARIO (contexto para recordar lo hablado; úsalo solo si es relevante y no lo menciones si no viene al caso):\n"+"\n\n".join(bloques)
+    except Exception:
+        log.exception('No se pudo leer el contexto de conversaciones recientes'); return ''
+
+def delete_all_conversations():
+    pid=profile_id(); _CACHE_RECIENTES.clear()
+    if USE_POSTGRES:
+        with pg_conn() as c: c.execute("DELETE FROM conversations WHERE profile_id=%s",(pid,))
+    else:
+        with sqlite_conn() as c: c.execute("DELETE FROM conversations WHERE profile_id=?",(pid,))
+
+
 def delete_conversation(cid):
+    _CACHE_RECIENTES.clear()
     pid=profile_id()
     if USE_POSTGRES:
         with pg_conn() as c: c.execute("DELETE FROM conversations WHERE id=%s AND profile_id=%s",(cid,pid))
@@ -439,20 +493,134 @@ def modelo_no_disponible(e):
     t=str(e).lower(); return any(s in t for s in ('model_not_found','decommission','does not exist','not found','no longer supported'))
 
 
-def consultar(mensajes):
+# ================= Varios motores de IA (respaldo automático cuando uno llega a su límite) =================
+import time as _time
+import urllib.request, urllib.error, urllib.parse
+
+class _Resp:
+    def __init__(self, status, body, headers): self.status_code=status; self.content=body; self.headers=headers
+    @property
+    def text(self): return self.content.decode('utf-8','replace')
+    def json(self): return json.loads(self.content.decode('utf-8'))
+
+def _http(method, url, headers=None, json_body=None, params=None, timeout=60):
+    """Petición HTTP con la librería estándar (sin dependencias extra)."""
+    if params: url+=('&' if '?' in url else '?')+urllib.parse.urlencode(params)
+    h={'User-Agent':'TAMPY/1.0',**(headers or {})}; data=None
+    if json_body is not None: data=json.dumps(json_body).encode('utf-8'); h['Content-Type']='application/json'
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url,data=data,method=method,headers=h),timeout=timeout) as r: return _Resp(r.status,r.read(),r.headers)
+    except urllib.error.HTTPError as e: return _Resp(e.code,e.read(),e.headers)
+
+def _lista_env(nombre, por_defecto):
+    v=os.environ.get(nombre)
+    return [x.strip() for x in (v if v else por_defecto).split(',') if x.strip()]
+
+# nombre: (variable de la clave, URL base compatible con OpenAI, modelos de texto, modelos con visión, ¿puede usar tus datos para entrenar en el plan gratis?)
+_DEF_PROVEEDORES = {
+    'cerebras':  ('CEREBRAS_API_KEY',  'https://api.cerebras.ai/v1',                              'gpt-oss-120b,llama-3.3-70b', '',                                False),
+    'gemini':    ('GEMINI_API_KEY',    'https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-2.5-flash,gemini-2.5-flash-lite', 'gemini-2.5-flash,gemini-2.5-flash-lite', True),
+    'openrouter':('OPENROUTER_API_KEY','https://openrouter.ai/api/v1',                            'openai/gpt-oss-120b:free,meta-llama/llama-3.3-70b-instruct:free', 'google/gemma-3-27b-it:free', True),
+    'mistral':   ('MISTRAL_API_KEY',   'https://api.mistral.ai/v1',                               'mistral-small-latest', 'mistral-small-latest', True),
+}
+PROVEEDORES_EXTRA = {}
+for _n,(_kv,_base,_mt,_mv,_entrena) in _DEF_PROVEEDORES.items():
+    _key=os.environ.get(_kv,'').strip()
+    if _key:
+        PROVEEDORES_EXTRA[_n]={'nombre':_n,'key':_key,'base':os.environ.get(_n.upper()+'_BASE_URL',_base).rstrip('/'),
+            'modelos':_lista_env(_n.upper()+'_MODELOS',_mt),'vision':_lista_env(_n.upper()+'_MODELOS_VISION',_mv) if (_mv or os.environ.get(_n.upper()+'_MODELOS_VISION')) else [],
+            'entrena':_entrena}
+# Con archivos adjuntos o imágenes, los motores marcados "entrena" NO se usan (Google/OpenRouter/Mistral gratis pueden usar tus datos).
+FALLBACK_CON_ARCHIVOS = os.environ.get('FALLBACK_CON_ARCHIVOS','').strip() in ('1','true','si','sí')
+
+class ErrorMotores(Exception):
+    def __init__(self, errores, omitidos): self.errores=errores; self.omitidos=omitidos; super().__init__('; '.join(f'{n}: {e}' for n,e in errores) or 'sin motores disponibles')
+
+def _hay_motores(): return bool(client) or bool(PROVEEDORES_EXTRA)
+
+def _orden_proveedores():
+    out=[]
+    for n in _lista_env('ORDEN_PROVEEDORES','groq,cerebras,gemini,openrouter,mistral'):
+        if n=='groq':
+            if client: out.append({'nombre':'groq'})
+        elif n in PROVEEDORES_EXTRA: out.append(PROVEEDORES_EXTRA[n])
+    return out
+
+def _mensajes_sensibles(mensajes):
+    for m in mensajes:
+        c=m['content']
+        if isinstance(c,list): return True
+        if '[Archivo adjunto' in c or 'ARCHIVO EXCEL:' in c: return True
+    return False
+
+def _es_error_de_modelo(e):
+    t=str(e).lower(); return any(x in t for x in ('model_not_found','decommission','does not exist','not found','no longer supported','404'))
+
+def _groq_consultar(system_text, mensajes, max_tokens, temperature):
     candidatos=MODELOS_VISION if tiene_imagen(mensajes) else MODELOS_TEXTO
     ultimo=None
-    system={'role':'system','content':SYSTEM_BASE+memory_context()}
     for modelo in candidatos:
         try:
-            r=client.chat.completions.create(model=modelo,messages=[system]+mensajes,temperature=.6,max_tokens=MAX_TOKENS_RESPUESTA)
+            r=client.chat.completions.create(model=modelo,messages=[{'role':'system','content':system_text}]+mensajes,temperature=temperature,max_tokens=max_tokens)
             texto=(r.choices[0].message.content or '').strip(); texto=re.sub(r'<think>.*?</think>','',texto,flags=re.S).strip()
             return texto or 'No obtuve respuesta del modelo.',modelo
         except Exception as e:
-            ultimo=e
-            if modelo_no_disponible(e): continue
-            raise
-    raise RuntimeError(f'Ningún modelo configurado está disponible en Groq. Último error: {ultimo}')
+            ultimo=e; log.warning('Groq/%s falló: %s',modelo,str(e)[:200])
+            continue          # límite agotado o modelo no disponible: prueba el siguiente modelo de Groq
+    raise ultimo or RuntimeError('Groq no tiene modelos configurados.')
+
+def _compat_consultar(prov, system_text, mensajes, max_tokens, temperature):
+    modelos=prov['vision'] if tiene_imagen(mensajes) else prov['modelos']
+    if not modelos: raise RuntimeError('este motor no lee imágenes')
+    ultimo=None
+    for modelo in modelos:
+        try:
+            r=_http('POST',prov['base']+'/chat/completions',headers={'Authorization':'Bearer '+prov['key']},
+                    json_body={'model':modelo,'messages':[{'role':'system','content':system_text}]+mensajes,'temperature':temperature,'max_tokens':max_tokens},timeout=120)
+            if r.status_code>=400: raise RuntimeError(f'HTTP {r.status_code}: {r.text[:200]}')
+            texto=(r.json()['choices'][0]['message'].get('content') or '').strip(); texto=re.sub(r'<think>.*?</think>','',texto,flags=re.S).strip()
+            if not texto: raise RuntimeError('respuesta vacía')
+            return texto,modelo
+        except Exception as e:
+            ultimo=e; log.warning('%s/%s falló: %s',prov['nombre'],modelo,str(e)[:200])
+    raise ultimo
+
+def _ejecutar(system_full, system_seguro, mensajes, temperature=.6, max_tokens=None, sensible=None):
+    sensible=_mensajes_sensibles(mensajes) if sensible is None else sensible
+    errores=[]; omitidos=[]
+    for prov in _orden_proveedores():
+        n=prov['nombre']
+        if n!='groq' and prov.get('entrena') and sensible and not FALLBACK_CON_ARCHIVOS:
+            omitidos.append(n); continue
+        try:
+            if n=='groq':
+                texto,modelo=_groq_consultar(system_full,mensajes,min(max_tokens or MAX_TOKENS_RESPUESTA,MAX_TOKENS_RESPUESTA) if max_tokens else MAX_TOKENS_RESPUESTA,temperature)
+            else:
+                texto,modelo=_compat_consultar(prov,system_seguro if prov.get('entrena') else system_full,mensajes,max_tokens or MAX_TOKENS_OTROS,temperature)
+            return texto,f'{n}:{modelo}',n
+        except Exception as e:
+            errores.append((n,str(e)[:160]))
+    raise ErrorMotores(errores,omitidos)
+
+def consultar(mensajes, conv_id=None):
+    seguro=SYSTEM_BASE+memory_context()
+    return _ejecutar(seguro+recientes_contexto(conv_id),seguro,mensajes)
+
+def llm_simple(system, user, temperature=0, max_tokens=2500, sensible=False):
+    """Una sola consulta rápida (planificador, landing, mejora de prompts) con el mismo respaldo entre motores."""
+    texto,_,_=_ejecutar(system,system,[{'role':'user','content':user}],temperature,max_tokens,sensible)
+    return texto
+
+def _mensaje_error_motores(e):
+    t=' '.join(m for _,m in e.errores).lower()
+    partes=[]
+    if 'tokens per' in t or 'too large' in t: partes.append('la petición es demasiado grande para el límite por minuto del plan gratis')
+    elif '429' in t or 'rate' in t or 'quota' in t: partes.append('los motores gratuitos alcanzaron su límite')
+    elif 'api key' in t or '401' in t: partes.append('una API key es inválida o fue revocada')
+    else: partes.append('ningún motor pudo responder')
+    msg='Sin respuesta: '+partes[0]+'. Intenta de nuevo en un minuto.'
+    if e.omitidos: msg+=f" (Por privacidad no envié este mensaje con archivos a: {', '.join(e.omitidos)}.)"
+    return msg
 
 
 @app.errorhandler(413)
@@ -499,8 +667,10 @@ def diagnostico():
     except Exception as e:
         memoria_error=str(e)[:300]
     return jsonify({
-        'ok': bool(client) and db_ok and memoria_ok,
+        'ok': _hay_motores() and db_ok and memoria_ok,
         'groq_configurada': bool(GROQ_API_KEY),
+        'motores_texto': [p['nombre'] for p in _orden_proveedores()],
+        'motores_imagen': [n for n in _lista_env('ORDEN_IMAGEN','cloudflare,pollinations') if n!='cloudflare' or (CF_ACCOUNT_ID and CF_API_TOKEN)],
         'base_datos': db_kind(),
         'base_datos_ok': db_ok,
         'memoria_lectura_ok': memoria_ok,
@@ -523,6 +693,11 @@ def api_conversation(cid):
     if request.method=='DELETE': delete_conversation(cid); return jsonify(ok=True)
     d=get_conversation(cid)
     return jsonify(d) if d else (jsonify(error='Conversación no encontrada.'),404)
+
+@app.route('/api/conversations',methods=['DELETE'])
+def api_delete_all_conversations():
+    if not autorizado(): return jsonify(error='Clave incorrecta.'),401
+    delete_all_conversations(); return jsonify(ok=True)
 
 @app.route('/api/conversations',methods=['POST'])
 def api_save_conversation():
@@ -735,13 +910,12 @@ def _resolve_col(headers, requested):
 
 
 def _plan_with_ai(prompt, workbook_info):
-    if not client:
+    if not _hay_motores():
         return None
     system='''Eres un planificador de transformaciones de archivos. Devuelve SOLO JSON válido, sin Markdown. Nunca inventes columnas. Debes escoger únicamente operaciones seguras de esta lista: remove_empty_rows, remove_duplicates, replace_values, fill_blank, delete_rows_where, rename_column, add_column_constant, trim_text, sort_by, convert_number. Cada operación debe indicar sheet cuando aplique. Para delete_rows_where usa column, operator y value. Para replace_values usa column, from y to. Para fill_blank usa column y value. Para rename_column usa from y to. Para add_column_constant usa column y value. Para trim_text usa column. Para sort_by usa column y direction asc/desc. Para convert_number usa column. Si la petición es ambigua o no se puede ejecutar con seguridad, devuelve operations=[] y una explicación breve en note. Formato: {"operations":[...],"note":"..."}.'''
     user='PETICIÓN DEL USUARIO:\n'+prompt+'\n\nESTRUCTURA DEL ARCHIVO:\n'+json.dumps(workbook_info,ensure_ascii=False)[:30000]
     try:
-        r=client.chat.completions.create(model=MODELOS_TEXTO[0],messages=[{'role':'system','content':system},{'role':'user','content':user}],temperature=0,max_tokens=2500)
-        raw=(r.choices[0].message.content or '').strip()
+        raw=llm_simple(system,user,0,2500,sensible=True).strip()
         raw=re.sub(r'^```(?:json)?\s*|\s*```$','',raw,flags=re.I|re.S).strip()
         return json.loads(raw)
     except Exception:
@@ -1032,12 +1206,11 @@ def api_landing():
     prompt=str(d.get('prompt','')).strip(); nombre=str(d.get('nombre','Mi negocio')).strip()[:120]; estilo=str(d.get('estilo','moderno, elegante y responsive')).strip()[:300]
     if not prompt: return jsonify(error='Describe la landing que quieres crear.'),400
     html=None
-    if client:
+    if _hay_motores():
         system=('Eres un desarrollador frontend senior. Genera SOLO un archivo HTML completo y autónomo, listo para publicar. Incluye HTML, CSS y JavaScript en el mismo archivo, responsive, accesible, SEO básico y animaciones suaves. No uses Markdown ni bloques de código. No expliques nada.')
         user=f'Negocio: {nombre}\nEstilo: {estilo}\nRequisitos: {prompt}\nCrea una landing page premium.'
         try:
-            r=client.chat.completions.create(model=MODELOS_TEXTO[0],messages=[{'role':'system','content':system},{'role':'user','content':user}],temperature=.7,max_tokens=7000)
-            html=(r.choices[0].message.content or '').strip()
+            html=llm_simple(system,user,.7,7000,sensible=False).strip()
             html=re.sub(r'^```(?:html)?\s*|\s*```$','',html,flags=re.I|re.S).strip()
         except Exception: html=None
     if not html or '<html' not in html.lower(): html=_landing_fallback(nombre)
@@ -1105,22 +1278,82 @@ def api_dashboard_zip():
 @app.route('/api/chat',methods=['POST'])
 def api_chat():
     if not autorizado(): return jsonify(error='Clave incorrecta.'),401
-    if client is None: return jsonify(error='Falta GROQ_API_KEY.'),500
+    if not _hay_motores(): return jsonify(error='Falta GROQ_API_KEY (o la clave de otro motor).'),500
     try:
-        mensajes=limpiar_mensajes((request.get_json(silent=True) or {}).get('mensajes'))
+        d=request.get_json(silent=True) or {}
+        mensajes=limpiar_mensajes(d.get('mensajes'))
         # Explicit memory command: store and also continue the conversation.
         for item in mensajes:
             if item['role']=='user' and isinstance(item['content'],str):
                 for content,cat in extract_memory_candidates(item['content']):
                     try: add_memory(content,cat)
                     except Exception: log.exception('No se pudo guardar una memoria; continúo con la respuesta')
-        texto,modelo=consultar(mensajes)
-        return jsonify(respuesta=texto,modelo=modelo)
+        texto,modelo,proveedor=consultar(mensajes,str(d.get('conversation_id') or '')[:80] or None)
+        return jsonify(respuesta=texto,modelo=modelo,proveedor=proveedor)
+    except ErrorMotores as e:
+        log.error('Todos los motores fallaron: %s',e); return jsonify(error=_mensaje_error_motores(e)),429
     except Exception as e:
         log.exception('Error /api/chat'); t=str(e).lower()
-        if ('rate' in t and 'limit' in t) or '429' in t: return jsonify(error='Llegaste al límite de Groq. Intenta de nuevo en un momento.'),429
-        if 'invalid api key' in t or '401' in t: return jsonify(error='La API key de Groq es inválida o fue revocada.'),500
+        if ('rate' in t and 'limit' in t) or '429' in t: return jsonify(error='Llegaste al límite del motor. Intenta de nuevo en un momento.'),429
+        if 'invalid api key' in t or '401' in t: return jsonify(error='La API key es inválida o fue revocada.'),500
         return jsonify(error=f'Error del modelo: {e}'),500
+
+
+# ================= Generación de imágenes =================
+from urllib.parse import quote as _q
+CF_ACCOUNT_ID=os.environ.get('CF_ACCOUNT_ID','').strip(); CF_API_TOKEN=os.environ.get('CF_API_TOKEN','').strip()
+CF_BASE_URL=os.environ.get('CF_BASE_URL','https://api.cloudflare.com/client/v4').rstrip('/')
+POLLINATIONS_URL=os.environ.get('POLLINATIONS_URL','https://image.pollinations.ai/prompt').rstrip('/')
+TAMANOS_IMAGEN={'cuadrado':(1024,1024),'vertical':(768,1024),'horizontal':(1024,768)}
+PROMPT_IMAGEN_SYS=("Convierte la petición del usuario en UN prompt en inglés para un generador de imágenes (FLUX). "
+    "Describe sujeto, estilo, iluminación, composición y colores en 40 a 70 palabras. "
+    "Si el usuario pide texto dentro de la imagen, inclúyelo entre comillas exactamente como lo pidió. "
+    "Responde SOLO con el prompt, sin explicaciones.")
+
+def _imagen_cloudflare(prompt, w, h):
+    r=_http('POST',f'{CF_BASE_URL}/accounts/{CF_ACCOUNT_ID}/ai/run/@cf/black-forest-labs/flux-1-schnell',headers={'Authorization':'Bearer '+CF_API_TOKEN},json_body={'prompt':prompt,'steps':4},timeout=90)
+    if r.status_code>=400: raise RuntimeError(f'Cloudflare HTTP {r.status_code}: {r.text[:150]}')
+    b64=(r.json().get('result') or {}).get('image')
+    if not b64: raise RuntimeError('Cloudflare no devolvió imagen')
+    return _b64.b64decode(b64),'image/jpeg'
+
+def _imagen_pollinations(prompt, w, h):
+    url=f'{POLLINATIONS_URL}/{_q(prompt[:900],safe="")}'
+    for intento in (1,2):
+        r=_http('GET',url,params={'width':w,'height':h,'model':'flux','nologo':'true','seed':int(_time.time())%100000},timeout=100)
+        if r.status_code in (429,500,502,503) and intento==1: _time.sleep(4); continue
+        break
+    if r.status_code==429: raise RuntimeError('el generador gratuito está ocupado (429)')
+    if r.status_code>=400: raise RuntimeError(f'Pollinations HTTP {r.status_code}')
+    ct=r.headers.get('content-type','').split(';')[0].strip()
+    if not ct.startswith('image/') or len(r.content)<2000: raise RuntimeError('Pollinations no devolvió una imagen')
+    return r.content,ct
+
+@app.route('/api/imagen',methods=['POST'])
+def api_imagen():
+    if not autorizado(): return jsonify(error='Clave incorrecta.'),401
+    d=request.get_json(silent=True) or {}
+    pedido=str(d.get('prompt') or '').strip()[:1500]
+    if len(pedido)<3: return jsonify(error='Describe la imagen que quieres.'),400
+    w,h=TAMANOS_IMAGEN.get(d.get('formato'),TAMANOS_IMAGEN['cuadrado'])
+    prompt=pedido
+    if _hay_motores():
+        try:
+            mejor=llm_simple(PROMPT_IMAGEN_SYS,pedido,.7,220,sensible=False).strip().strip('"')
+            if 8<=len(mejor)<=1200: prompt=mejor
+        except Exception: log.warning('No se pudo mejorar el prompt de imagen; uso el original')
+    errores=[]
+    for n in _lista_env('ORDEN_IMAGEN','cloudflare,pollinations'):
+        if n=='cloudflare' and not (CF_ACCOUNT_ID and CF_API_TOKEN): continue
+        f={'cloudflare':_imagen_cloudflare,'pollinations':_imagen_pollinations}.get(n)
+        if not f: continue
+        try:
+            datos,ct=f(prompt,w,h)
+            r=Response(datos,mimetype=ct); r.headers['X-Motor']=n; r.headers['X-Prompt']=_q(prompt[:400]); r.headers['Cache-Control']='no-store'
+            return r
+        except Exception as e:
+            log.warning('Imagen/%s falló: %s',n,str(e)[:200]); errores.append(f'{n}: {str(e)[:120]}')
+    return jsonify(error='No pude generar la imagen ahora ('+'; '.join(errores)+'). Intenta de nuevo en unos segundos.'),502
 
 
 def md_to_plain(md):
