@@ -215,7 +215,7 @@ footer { padding: 0 16px calc(14px + env(safe-area-inset-bottom, 0px)); }
 .archivo-listo { display:flex; align-items:center; gap:10px; padding:10px 12px; margin-top:8px; border:1px solid var(--border); border-radius:12px; background:var(--accent-soft); }
 .archivo-listo .descarga-icon { font-size:24px; }
 .archivo-listo .meta { flex:1; min-width:0; }
-.archivo-listo .meta b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.archivo-listo .meta b { display:block; white-space:normal; overflow-wrap:anywhere; }
 .archivo-listo .meta small { color:var(--muted); }
 .archivo-listo .descargar { border:0; border-radius:9px; padding:7px 10px; background:var(--accent); color:var(--on-accent); cursor:pointer; font-weight:600; }
 .archivo-listo .descargar:hover { filter:brightness(.94); }
@@ -406,7 +406,7 @@ async function api(url,opt={}){opt.headers=Object.assign({},opt.headers||{});try
 function profileHeader(){let p='public';try{p=localStorage.getItem('tampy_profile')||p}catch(e){}return {'X-Tampy-Profile':p}}
 function redimensionarImagen(file){return new Promise((res,rej)=>{const u=URL.createObjectURL(file),im=new Image();im.onload=()=>{const M=1568,s=Math.min(1,M/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext('2d').drawImage(im,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL('image/jpeg',.85))};im.onerror=()=>rej(new Error('No pude abrir '+file.name));im.src=u})}
 async function procesarArchivos(lista){for(const file of lista){if(pendientes.length>=10){alert('Máximo 10 archivos o imágenes por mensaje.');break}try{if(file.type.startsWith('image/')){pendientes.push({tipo:'imagen',nombre:file.name||'imagen.jpg',size:file.size,dataUrl:await redimensionarImagen(file)})}else{subiendo.push(file.name);pintarPrevias();const fd=new FormData();fd.append('archivo',file);let r,d;try{r=await api('/api/archivo',{method:'POST',body:fd});try{d=await r.json()}catch(_){d={error:r.status===413?'El archivo supera el límite de 100 MB.':'El servidor no pudo procesar el archivo (HTTP '+r.status+'). En Render gratis suele ser por tamaño o por tiempo de espera.'}}}finally{subiendo.splice(subiendo.indexOf(file.name),1)}if(!r.ok)throw new Error(d.error);pendientes.push({tipo:'archivo',id:d.id,nombre:d.nombre,size:file.size,texto:d.texto,truncado:d.truncado,analisis:d.analisis})}}catch(e){alert(e.message)}}pintarPrevias()}
-function iconoArchivo(nombre){const e=(nombre.split('.').pop()||'').toLowerCase();return ({xlsx:'📊',xlsm:'📊',xls:'📊',csv:'📊',pdf:'📕',docx:'📘',pptx:'📙',txt:'📄',md:'📝',json:'🧾',js:'🟨',py:'🐍',html:'🌐',css:'🎨'}[e]||'📎')}
+function iconoArchivo(nombre){const e=(nombre.split('.').pop()||'').toLowerCase();return ({xlsx:'📊',xlsm:'📊',xls:'📊',csv:'📊',pdf:'📕',docx:'📘',pptx:'📙',txt:'📄',md:'📝',json:'🧾',js:'🟨',gs:'📜',py:'🐍',html:'🌐',css:'🎨',sql:'🗄️',sh:'⌨️'}[e]||'📎')}
 function formatoBytes(n){if(!n)return '';if(n<1024)return n+' B';if(n<1048576)return (n/1024).toFixed(1)+' KB';return (n/1048576).toFixed(1)+' MB'}
 function pintarPrevias(){
   previas.innerHTML='';
@@ -439,11 +439,21 @@ function extraerArchivos(md){
   const texto=String(md).replace(/```archivo:\s*([^\s`]+)[^\n]*\n([\s\S]*?)(```|$)/g,(m,nombre,cont,cierre)=>{archivos.push({nombre:nombreSeguro(nombre),contenido:cont.replace(/\n$/,''),completo:cierre==='```'});return '\n'});
   return {texto:texto.trim(),archivos};
 }
+function partirMensaje(md){
+  md=String(md);const partes=[];let ultimo=0,m;const re=/```archivo:\s*([^\s`]+)[^\n]*\n([\s\S]*?)(```|$)/g;
+  while((m=re.exec(md))!==null){
+    const antes=md.slice(ultimo,m.index).trim();if(antes)partes.push({t:'texto',v:antes});
+    partes.push({t:'archivo',a:{nombre:nombreSeguro(m[1]),contenido:m[2].replace(/\n$/,''),completo:m[3]==='```'}});
+    ultimo=re.lastIndex;if(m[3]!=='```')break;
+  }
+  const resto=md.slice(ultimo).trim();if(resto)partes.push({t:'texto',v:resto});
+  return partes;
+}
 function rellenarBot(c,contenido){
   const mi=String(contenido).match(/^\[\[imagen:([\s\S]*)\]\]$/);if(mi){c.appendChild(tarjetaImagenGuardada(mi[1]));return}
-  const {texto,archivos}=extraerArchivos(contenido);
-  if(texto||!archivos.length)c.appendChild(renderMarkdown(texto||contenido));
-  archivos.forEach(a=>c.appendChild(tarjetaArchivo(a)));
+  const partes=partirMensaje(contenido);
+  if(!partes.length){c.appendChild(renderMarkdown(contenido));return}
+  partes.forEach(p=>c.appendChild(p.t==='texto'?renderMarkdown(p.v):tarjetaArchivo(p.a)));
 }
 function tarjetaArchivo(a){
   const ext=(a.nombre.split('.').pop()||'').toLowerCase();
