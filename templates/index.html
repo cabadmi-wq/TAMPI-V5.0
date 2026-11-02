@@ -8,39 +8,39 @@
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="TAMPY">
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#f1f7fc">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#00101d">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fafafa">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141415">
 <style>
 :root {
   --accent: #0a6fc2;
   --accent-hover: #085a9f;
-  --accent-soft: #e1f0fc;
+  --accent-soft: #eaf2fb;
   --on-accent: #ffffff;
-  --bg: #f1f7fc;
-  --glow: rgba(0, 127, 190, .16);
+  --bg: #fafafa;
+  --glow: transparent;
   --surface: #ffffff;
-  --text: #0a1a2b;
-  --muted: #587089;
-  --border: #d0e1f0;
-  --user-bg: #dbeafb;
-  --code-bg: #021426;
-  --shadow: 0 4px 24px rgba(6, 70, 130, .10);
+  --text: #1c1c1e;
+  --muted: #6e6e73;
+  --border: #e5e5e8;
+  --user-bg: #efeff1;
+  --code-bg: #16181d;
+  --shadow: 0 2px 14px rgba(0, 0, 0, .06);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --accent: #29b6ff;
-    --accent-hover: #6fd0ff;
-    --accent-soft: #08334f;
-    --on-accent: #00101d;
-    --bg: #00101d;
-    --glow: rgba(0, 127, 164, .30);
-    --surface: #05233a;
-    --text: #e6f2fb;
-    --muted: #86a8c2;
-    --border: #0d3a58;
-    --user-bg: #0a3b5e;
-    --code-bg: #010b14;
-    --shadow: 0 4px 24px rgba(0, 0, 0, .45);
+    --accent: #4aa3ff;
+    --accent-hover: #7bbcff;
+    --accent-soft: #1b2635;
+    --on-accent: #0a0a0b;
+    --bg: #141415;
+    --glow: transparent;
+    --surface: #1d1d1f;
+    --text: #ececee;
+    --muted: #9b9ba2;
+    --border: #2c2c2f;
+    --user-bg: #2a2a2d;
+    --code-bg: #0d0d0e;
+    --shadow: 0 2px 14px rgba(0, 0, 0, .35);
   }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -73,7 +73,7 @@ main { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
 
 /* Pantalla de bienvenida */
 #bienvenida { text-align: center; padding: 9vh 0 3vh; }
-#bienvenida svg { width: 150px; height: 150px; filter: drop-shadow(0 10px 24px rgba(20, 140, 255, .40)); }
+#bienvenida svg { width: 150px; height: 150px; filter: drop-shadow(0 8px 22px rgba(0, 0, 0, .22)); }
 #bienvenida h1 {
   font-family: ui-serif, Georgia, "Times New Roman", serif;
   font-weight: 500; font-size: clamp(28px, 5vw, 38px); margin-top: 18px;
@@ -97,7 +97,7 @@ main { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
 .avatar { flex: none; width: 30px; height: 30px; margin-top: 2px; }
 #espaciador { flex: none; pointer-events: none; }
 .wordmark { display:flex; align-items:center; justify-content:center; gap:14px; margin:4px 0 14px; padding-left:.5em; letter-spacing:.5em; font-size:15px; font-weight:500; color:var(--text); }
-.wordmark::before, .wordmark::after { content:""; width:34px; height:1px; background:var(--accent); }
+.wordmark::before, .wordmark::after { content:""; width:34px; height:1px; background:var(--border); }
 .archivo-card { margin-top:12px; }
 .archivo-card .archivo-listo { margin-top:0; flex-wrap:wrap; }
 .archivo-card .archivo-listo .meta { flex:1 1 150px; min-width:0; }
@@ -107,6 +107,41 @@ main { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
 .vista-archivo.abierta { display:block; }
 .vista-archivo pre { margin:0; }
 .nota-bot { color:var(--muted); font-size:12px; margin-top:8px; }
+header { display:flex; align-items:center; gap:6px; }
+header .marca { font-weight:650; font-size:17px; display:flex; align-items:center; gap:9px; }
+.hbtn { flex:none; width:40px; height:40px; border:0; background:transparent; color:var(--text); border-radius:10px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.hbtn:hover { background:var(--user-bg); }
+.hbtn svg { width:22px; height:22px; }
+.marca svg { width:30px; height:30px; flex:none; }
+#drawerOverlay { position:fixed; inset:0; background:rgba(0,0,0,.45); opacity:0; pointer-events:none; transition:opacity .22s; z-index:59; }
+#drawer { position:fixed; top:0; left:0; bottom:0; width:min(84vw,330px); background:var(--bg); border-right:1px solid var(--border); transform:translateX(-102%); transition:transform .24s ease; z-index:60; display:flex; flex-direction:column; padding:calc(14px + env(safe-area-inset-top,0px)) 12px calc(14px + env(safe-area-inset-bottom,0px)); }
+body.drawer-open #drawer { transform:none; box-shadow:0 0 40px rgba(0,0,0,.35); }
+body.drawer-open #drawerOverlay { opacity:1; pointer-events:auto; }
+.dr-top { display:flex; align-items:center; justify-content:space-between; padding:2px 4px 14px 8px; }
+.dr-brand { display:flex; align-items:center; gap:10px; font-weight:650; font-size:19px; }
+.dr-brand svg { width:32px; height:32px; }
+.dr-item { display:flex; align-items:center; gap:12px; width:100%; padding:11px 10px; border:0; background:transparent; color:var(--text); font-size:16px; border-radius:10px; cursor:pointer; text-align:left; }
+.dr-item:hover { background:var(--user-bg); }
+.dr-item svg { width:20px; height:20px; flex:none; color:var(--muted); }
+.dr-sec { display:flex; align-items:center; justify-content:space-between; color:var(--muted); font-size:13px; padding:16px 10px 6px; }
+.dr-sec button { border:0; background:transparent; color:var(--muted); font-size:12px; cursor:pointer; text-decoration:underline; }
+#drawerLista { flex:1; overflow-y:auto; margin:0 -4px; padding:0 4px; }
+.dr-conv { display:flex; align-items:center; gap:2px; border-radius:10px; }
+.dr-conv:hover, .dr-conv.activa { background:var(--user-bg); }
+.dr-conv .tit { flex:1; min-width:0; padding:11px 10px; border:0; background:transparent; color:var(--text); font-size:15px; text-align:left; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+.dr-conv .del { flex:none; width:38px; height:38px; border:0; background:transparent; color:var(--muted); border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.dr-conv .del svg { width:17px; height:17px; }
+.dr-conv .del:hover { color:#d92d20; }
+.dr-vacio { color:var(--muted); font-size:14px; padding:10px; }
+.dr-bottom { padding-top:10px; }
+.dr-nuevo { width:100%; padding:13px; border:0; border-radius:999px; background:var(--text); color:var(--bg); font-size:16px; font-weight:600; cursor:pointer; }
+.dr-pie { text-align:center; color:var(--muted); font-size:11px; padding-top:8px; min-height:16px; }
+.icono.activo { background:var(--accent-soft); color:var(--accent); }
+.img-generada { display:block; max-width:100%; width:min(100%,420px); border-radius:14px; border:1px solid var(--border); }
+.img-acciones { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+.btn-acc, .btn-sec { border-radius:9px; padding:8px 12px; cursor:pointer; font-size:13.5px; }
+.btn-acc { border:0; background:var(--accent); color:var(--on-accent); font-weight:600; }
+.btn-sec { border:1px solid var(--border); background:transparent; color:var(--text); }
 header .marca { white-space: nowrap; min-width: 0; flex: 1 1 0; overflow: hidden; }
 .acciones { flex: none; }
 .marca svg { flex: none; }
@@ -136,7 +171,7 @@ header .marca { white-space: nowrap; min-width: 0; flex: 1 1 0; overflow: hidden
 }
 .cuerpo pre code { background: none; padding: 0; color: inherit; }
 .copiar {
-  position: absolute; top: 8px; right: 8px; background: #0b3558; color: #cdeaff;
+  position: absolute; top: 8px; right: 8px; background: #2a2d33; color: #e6e8ec;
   border: 0; border-radius: 6px; padding: 4px 9px; font-size: 12px; cursor: pointer;
 }
 .copiar:hover { background: var(--accent); color: var(--on-accent); }
@@ -226,16 +261,23 @@ textarea::placeholder { color: var(--muted); }
 </svg>
 
 <header>
-  <div class="marca"><svg><use href="#logo"/></svg> TAMPY <span id="storageBadge" style="font-size:11px;color:var(--muted);font-weight:500"></span></div>
-  <div class="acciones" style="display:flex;gap:8px">
-    <button class="btn-nuevo" aria-label="Historial" onclick="abrirPanel('historialPanel')"><span class="ic">💬</span><span class="tx"> Historial</span></button>
-    <button class="btn-nuevo" aria-label="Memoria" onclick="abrirPanel('memoriaPanel')"><span class="ic">🧠</span><span class="tx"> Memoria</span></button>
-    <button class="btn-nuevo" aria-label="Nueva conversación" onclick="nuevaConversacion()"><span class="ic">+</span><span class="tx"> Nueva</span></button>
-  </div>
+  <button class="hbtn" aria-label="Menú" onclick="abrirDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button>
+  <div class="marca"><svg><use href="#logo"/></svg> TAMPY</div>
+  <button class="hbtn" aria-label="Nuevo chat" onclick="nuevaConversacion()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
 </header>
 
+<div id="drawerOverlay" onclick="cerrarDrawer()"></div>
+<aside id="drawer" aria-label="Menú de TAMPY">
+  <div class="dr-top"><div class="dr-brand"><svg><use href="#logo"/></svg><span>TAMPY</span></div><button class="hbtn" aria-label="Cerrar menú" onclick="cerrarDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+  <button class="dr-item" onclick="nuevoDesdeDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nuevo chat</button>
+  <button class="dr-item" onclick="memoriaDesdeDrawer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h12v17l-6-4-6 4Z"/></svg>Memoria</button>
+  <div class="dr-sec"><span>Recientes</span><button id="btnBorrarTodo" onclick="borrarTodoHistorial()">Borrar todo</button></div>
+  <div id="drawerLista"></div>
+  <div class="dr-bottom"><button class="dr-nuevo" onclick="nuevoDesdeDrawer()">+ Nuevo chat</button></div>
+  <div class="dr-pie"><span id="storageBadge"></span></div>
+</aside>
 
-<div class="panel" id="historialPanel"><div class="panel-box"><div class="panel-head"><b>💬 Conversaciones</b><button onclick="cerrarPanel('historialPanel')">×</button></div><div id="listaConversaciones"></div></div></div>
+
 <div class="panel" id="memoriaPanel"><div class="panel-box"><div class="panel-head"><b>🧠 Memoria de TAMPY</b><button onclick="cerrarPanel('memoriaPanel')">×</button></div><p style="color:var(--muted);font-size:13px;margin-bottom:12px">Puedes decir <b>“Recuerda que…”</b> durante una conversación o añadir recuerdos aquí.</p><div style="display:flex;gap:8px;margin-bottom:14px"><input id="nuevaMemoria" placeholder="Ej.: Mi proyecto se llama TAMPY" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text)"><button class="btn-nuevo" onclick="guardarMemoria()">Guardar</button></div><div id="listaMemorias"></div></div></div>
 
 <main id="scroll">
@@ -263,7 +305,10 @@ textarea::placeholder { color: var(--muted); }
       </button>
       <input type="file" id="archivo" multiple hidden
         accept="image/*,.pdf,.docx,.pptx,.xlsx,.xlsm,.xls,.csv,.tsv,.txt,.md,.json,.xml,.html,.css,.js,.ts,.py,.java,.c,.cpp,.cs,.php,.sql,.yaml,.yml,.log">
-      <textarea id="texto" rows="1" placeholder="Escribe tu mensaje a TAMPY..."></textarea>
+      <button class="icono" id="btnImagen" type="button" title="Crear una imagen" aria-label="Crear una imagen" onclick="setModoImagen(!modoImagen)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/></svg>
+      </button>
+      <textarea id="texto" rows="1" placeholder="Mensaje a TAMPY…"></textarea>
       <button type="button" class="icono" id="enviar" title="Enviar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
       </button>
@@ -281,7 +326,7 @@ const $ = id => document.getElementById(id);
 const safeUUID = () => (window.crypto && typeof window.crypto.randomUUID === 'function') ? window.crypto.randomUUID() : ('id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
 
 let historial = [], pendientes = [], subiendo = [], ocupado = false, conversationId = null;
-let anclado = false, espaciador = null, anclaEl = null, destinoDescarga = null;
+let anclado = false, espaciador = null, anclaEl = null, destinoDescarga = null, modoImagen = false;
 let chat, scroll, texto, btnEnviar, previas, caja, inputArchivo;
 
 function initTampy(){
@@ -289,7 +334,7 @@ function initTampy(){
   if(!chat || !scroll || !texto || !btnEnviar){ console.error('TAMPY: faltan elementos del chat'); return; }
   try {
     if(!localStorage.getItem('tampy_profile')) localStorage.setItem('tampy_profile', safeUUID());
-    conversationId=localStorage.getItem('tampy_conversation_id') || safeUUID();
+    conversationId=safeUUID(); localStorage.setItem('tampy_conversation_id',conversationId);
   } catch(e) { conversationId=safeUUID(); console.warn('TAMPY localStorage no disponible',e); }
   const badge=$('storageBadge'); if(badge) badge.textContent=STORAGE_MODE==='postgres'?'☁ nube':'💻 local';
   inputArchivo.addEventListener('change',async e=>{await procesarArchivos([...e.target.files]);inputArchivo.value=''});
@@ -302,7 +347,10 @@ function initTampy(){
     if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); e.stopPropagation(); enviar(); }
   });
   btnEnviar.addEventListener('click',e=>{e.preventDefault(); enviar();});
-  cargarConversacionActual();
+  let tx0=null; const dr=$('drawer');
+  dr.addEventListener('touchstart',e=>{tx0=e.touches[0].clientX},{passive:true});
+  dr.addEventListener('touchend',e=>{if(tx0!==null&&e.changedTouches[0].clientX-tx0<-60)cerrarDrawer();tx0=null},{passive:true});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')cerrarDrawer()});
 }
 
 function logoHTML(){return '<svg class="avatar"><use href="#logo"></use></svg>'}
@@ -392,6 +440,7 @@ function extraerArchivos(md){
   return {texto:texto.trim(),archivos};
 }
 function rellenarBot(c,contenido){
+  const mi=String(contenido).match(/^\[\[imagen:([\s\S]*)\]\]$/);if(mi){c.appendChild(tarjetaImagenGuardada(mi[1]));return}
   const {texto,archivos}=extraerArchivos(contenido);
   if(texto||!archivos.length)c.appendChild(renderMarkdown(texto||contenido));
   archivos.forEach(a=>c.appendChild(tarjetaArchivo(a)));
@@ -536,11 +585,12 @@ async function crearLanding(){
   descargarBlob(await r.blob(),nombre.replace(/[^A-Za-z0-9_-]/g,'_')+'_landing.html');
 }
 
-async function guardarConversacion(){if(!historial.length)return;try{const title=(historial.find(m=>m.role==='user')?.content||'Nueva conversación');const t=typeof title==='string'?title.replace(/\s+/g,' ').slice(0,70):'Conversación';const r=await api('/api/conversations',{method:'POST',headers:{'Content-Type':'application/json',...profileHeader()},body:JSON.stringify({id:conversationId,title:t,mensajes:historial})});if(r.ok)localStorage.setItem('tampy_conversation_id',conversationId);else console.warn('No se pudo guardar la conversación',await r.text())}catch(e){console.warn('No se pudo guardar la conversación:',e)}}
+async function guardarConversacion(){if(!historial.length)return;try{const t=tituloDe(historial.find(m=>m.role==='user')?.content);const r=await api('/api/conversations',{method:'POST',headers:{'Content-Type':'application/json',...profileHeader()},body:JSON.stringify({id:conversationId,title:t,mensajes:historial})});if(r.ok)localStorage.setItem('tampy_conversation_id',conversationId);else console.warn('No se pudo guardar la conversación',await r.text())}catch(e){console.warn('No se pudo guardar la conversación:',e)}}
 async function enviar(){
   if(ocupado)return;
   if(subiendo.length){alert('Espera a que termine de subir el archivo.');return}
   const msg=texto.value.trim(); if(!msg&&!pendientes.length)return;
+  if(msg&&!pendientes.length&&(modoImagen||esPedidoImagen(msg))){await generarImagen(msg);return}
   const adj=pendientes.slice(); pendientes=[]; pintarPrevias();
   const imgs=adj.filter(a=>a.tipo==='imagen'),files=adj.filter(a=>a.tipo==='archivo');let body='';
   files.forEach(a=>body+=`[Archivo adjunto: ${a.nombre}]\n${a.texto}\n${a.truncado?'[...archivo recortado]\n':''}[Fin del archivo]\n\n`);
@@ -548,15 +598,105 @@ async function enviar(){
   const content=imgs.length?[{type:'text',text:body},...imgs.map(a=>({type:'image_url',image_url:{url:a.dataUrl}}))]:body;
   const uEl=agregarUsuario(msg,adj);anclarMensaje(uEl);historial.push({role:'user',content});texto.value='';autoAltura();ocupado=true;btnEnviar.disabled=true;
   const w=agregarEscribiendo();
-  try{const r=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json',...profileHeader()},body:JSON.stringify({mensajes:historial})});let d={};try{d=await r.json()}catch(e){throw new Error('El servidor no devolvió una respuesta válida. HTTP '+r.status)}w.remove();if(!r.ok)throw new Error(d.error||('Error del servidor HTTP '+r.status));const resp=aplicarFallbackArchivo(msg,files,d.respuesta||'No recibí contenido de respuesta.');historial.push({role:'assistant',content:resp});const bot=agregarBot(resp);ajustarEspaciador(uEl);autoArchivosAdjuntos(files,msg,bot).catch(()=>{}); await guardarConversacion()}catch(e){w.remove();historial.pop();agregarBot('⚠️ '+e.message,true);ajustarEspaciador(uEl)}ocupado=false;btnEnviar.disabled=false;texto.focus();
+  try{const r=await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json',...profileHeader()},body:JSON.stringify({mensajes:paraServidor(),conversation_id:conversationId})});let d={};try{d=await r.json()}catch(e){throw new Error('El servidor no devolvió una respuesta válida. HTTP '+r.status)}w.remove();if(!r.ok)throw new Error(d.error||('Error del servidor HTTP '+r.status));const resp=aplicarFallbackArchivo(msg,files,d.respuesta||'No recibí contenido de respuesta.');historial.push({role:'assistant',content:resp});const bot=agregarBot(resp);if(d.proveedor&&d.proveedor!=='groq')notaBot(bot,'Respondido con '+(NOMBRE_MOTOR[d.proveedor]||d.proveedor)+' porque Groq alcanzó su límite.');ajustarEspaciador(uEl);autoArchivosAdjuntos(files,msg,bot).catch(()=>{}); await guardarConversacion()}catch(e){w.remove();historial.pop();agregarBot('⚠️ '+e.message,true);ajustarEspaciador(uEl)}ocupado=false;btnEnviar.disabled=false;texto.focus();
 }
-async function cargarConversaciones(){const r=await api('/api/conversations',{headers:profileHeader()});if(!r.ok)return;const d=await r.json();const box=$('listaConversaciones');box.innerHTML='';d.conversaciones.forEach(c=>{const x=document.createElement('div');x.className='conv-item';x.innerHTML=`<b>${esc(c.title)}</b><div style="font-size:11px;color:var(--muted);margin-top:4px">${new Date(c.updated_at).toLocaleString()}</div>`;x.onclick=()=>abrirConversacion(c.id);box.appendChild(x)});if(!d.conversaciones.length)box.innerHTML='<p style="color:var(--muted)">Aún no hay conversaciones guardadas.</p>'}
-async function abrirConversacion(id){const r=await api('/api/conversations/'+id,{headers:profileHeader()});if(!r.ok)return;const d=await r.json();anclado=false;conversationId=id;localStorage.setItem('tampy_conversation_id',id);historial=d.messages||[];chat.innerHTML='';historial.forEach(m=>m.role==='user'?agregarUsuario(typeof m.content==='string'?m.content:'',[]):agregarBot(m.content));cerrarPanel('historialPanel')}
+
+// ================= Barra lateral, historial y borrado =================
+function abrirDrawer(){document.body.classList.add('drawer-open');cargarConversaciones()}
+function cerrarDrawer(){document.body.classList.remove('drawer-open')}
+function nuevoDesdeDrawer(){nuevaConversacion();cerrarDrawer()}
+function memoriaDesdeDrawer(){cerrarDrawer();abrirPanel('memoriaPanel')}
+const ICONO_BASURA='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v5M14 11v5"/></svg>';
+async function cargarConversaciones(){
+  const box=$('drawerLista');if(!box)return;
+  try{
+    const r=await api('/api/conversations',{headers:profileHeader()});if(!r.ok)return;const d=await r.json();
+    box.innerHTML='';
+    d.conversaciones.forEach(c=>{
+      const x=document.createElement('div');x.className='dr-conv'+(c.id===conversationId?' activa':'');
+      const t=document.createElement('button');t.type='button';t.className='tit';t.textContent=c.title||'Conversación';t.onclick=()=>abrirConversacion(c.id);
+      const del=document.createElement('button');del.type='button';del.className='del';del.setAttribute('aria-label','Borrar conversación');del.innerHTML=ICONO_BASURA;del.onclick=ev=>borrarConversacion(c.id,ev);
+      x.appendChild(t);x.appendChild(del);box.appendChild(x);
+    });
+    if(!d.conversaciones.length)box.innerHTML='<div class="dr-vacio">Aún no hay conversaciones.</div>';
+    $('btnBorrarTodo').style.display=d.conversaciones.length?'':'none';
+  }catch(e){console.warn('No se pudo cargar el historial',e)}
+}
+async function borrarConversacion(id,ev){
+  if(ev)ev.stopPropagation();
+  if(!confirm('¿Borrar esta conversación? No se puede deshacer.'))return;
+  const r=await api('/api/conversations/'+id,{method:'DELETE',headers:profileHeader()});
+  if(!r.ok){alert('No se pudo borrar la conversación.');return}
+  if(id===conversationId)nuevaConversacion();
+  cargarConversaciones();
+}
+async function borrarTodoHistorial(){
+  if(!confirm('¿Borrar TODO el historial de conversaciones? No se puede deshacer. Los recuerdos de la memoria se conservan.'))return;
+  const r=await api('/api/conversations',{method:'DELETE',headers:profileHeader()});
+  if(!r.ok){alert('No se pudo borrar el historial.');return}
+  nuevaConversacion();cargarConversaciones();
+}
+function tituloDe(content){
+  let t=Array.isArray(content)?content.filter(p=>p.type==='text').map(p=>p.text).join(' '):String(content||'');
+  const archivos=[...t.matchAll(/\[Archivo adjunto: ([^\]]*)\]/g)].map(m=>m[1]);
+  t=t.replace(/\[Archivo adjunto:[^\]]*\][\s\S]*?\[Fin del archivo\]\s*/g,'').replace(/\s+/g,' ').trim();
+  if(!t&&archivos.length)t='📎 '+archivos[0];
+  return (t||'Nueva conversación').slice(0,70);
+}
+function renderUsuarioGuardado(m){
+  let t=m.content,adj=[];
+  if(Array.isArray(t)){t.filter(p=>p.type==='image_url').forEach(p=>adj.push({tipo:'imagen',dataUrl:p.image_url.url}));t=t.filter(p=>p.type==='text').map(p=>p.text).join(' ')}
+  t=String(t||'').replace(/\[Archivo adjunto: ([^\]]*)\]\n[\s\S]*?\[Fin del archivo\]\n*/g,(m0,n)=>{adj.push({tipo:'archivo',nombre:n});return ''}).trim();
+  agregarUsuario(t,adj);
+}
+
+// ================= Imágenes =================
+const NOMBRE_MOTOR={gemini:'Gemini',cerebras:'Cerebras',openrouter:'OpenRouter',mistral:'Mistral'};
+function setModoImagen(v){modoImagen=!!v;const b=$('btnImagen');if(b)b.classList.toggle('activo',modoImagen);texto.placeholder=modoImagen?'Describe la imagen…':'Mensaje a TAMPY…';if(modoImagen)texto.focus()}
+function esPedidoImagen(t){return /\b(genera(me)?|cr[eé]a(me)?|dibuja(me)?|haz(me)?|dise[ñn]a(me)?|ilustra(me)?|pinta(me)?|dame|necesito|quiero)\s+(?:\S+\s+){0,2}?(imagen|im[aá]genes|foto|fotograf[ií]a|ilustraci[oó]n|dibujo|logo|logotipo|p[oó]ster|poster|banner|wallpaper|fondo de pantalla|avatar|[ií]cono|icono|retrato)\b/i.test(t||'')}
+function formatoImagen(t){t=(t||'').toLowerCase();if(/vertical|retrato|historia de instagram|story|p[oó]ster|poster|celular|portada de libro/.test(t))return 'vertical';if(/horizontal|banner|paisaje|wallpaper|fondo de pantalla|portada|youtube|panor[aá]mic/.test(t))return 'horizontal';return 'cuadrado'}
+function slugear(s,n=40){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,n)}
+function agregarBotImagen(blob,msg,motor){
+  const url=URL.createObjectURL(blob),ext=(blob.type.split('/')[1]||'jpg').replace('jpeg','jpg');
+  const div=document.createElement('div');div.className='msg bot';div.innerHTML=logoHTML();
+  const c=document.createElement('div');c.className='cuerpo';
+  const im=document.createElement('img');im.className='img-generada';im.src=url;im.alt=msg;c.appendChild(im);
+  const fila=document.createElement('div');fila.className='img-acciones';
+  const dl=document.createElement('button');dl.type='button';dl.className='btn-acc';dl.textContent='⬇ Descargar';dl.onclick=()=>descargarBlob(blob,'imagen_'+(slugear(msg)||'tampy')+'.'+ext,false);
+  const otra=document.createElement('button');otra.type='button';otra.className='btn-sec';otra.textContent='🔄 Otra versión';otra.onclick=()=>{if(!ocupado)generarImagen(msg)};
+  fila.appendChild(dl);fila.appendChild(otra);c.appendChild(fila);
+  const n=document.createElement('div');n.className='nota-bot';n.textContent='Generada con '+(motor==='cloudflare'?'FLUX (Cloudflare)':'FLUX (Pollinations)')+'.';c.appendChild(n);
+  div.appendChild(c);insertar(div);bajar();return div;
+}
+function tarjetaImagenGuardada(prompt){
+  const d=document.createElement('div');
+  const p=document.createElement('div');p.textContent='🖼️ Imagen generada: “'+prompt+'”';d.appendChild(p);
+  const n=document.createElement('div');n.className='nota-bot';n.textContent='Las imágenes no se guardan en el historial.';d.appendChild(n);
+  const b=document.createElement('button');b.type='button';b.className='btn-sec';b.style.marginTop='8px';b.textContent='🔄 Generar de nuevo';b.onclick=()=>{if(!ocupado)generarImagen(prompt)};d.appendChild(b);
+  return d;
+}
+async function generarImagen(msg){
+  const uEl=agregarUsuario(msg,[]);anclarMensaje(uEl);historial.push({role:'user',content:msg});
+  texto.value='';autoAltura();ocupado=true;btnEnviar.disabled=true;setModoImagen(false);
+  const w=agregarEscribiendo();w.querySelector('.cuerpo').insertAdjacentHTML('beforeend',' <span class="nota-bot">Generando imagen…</span>');
+  try{
+    const r=await api('/api/imagen',{method:'POST',headers:{'Content-Type':'application/json',...profileHeader()},body:JSON.stringify({prompt:msg,formato:formatoImagen(msg)})});
+    if(!r.ok)throw new Error(await leerError(r,'No pude generar la imagen'));
+    const blob=await r.blob(),motor=r.headers.get('X-Motor')||'';
+    w.remove();agregarBotImagen(blob,msg,motor);
+    historial.push({role:'assistant',content:'[[imagen:'+msg.replace(/\]\]/g,'')+']]'});
+    ajustarEspaciador(uEl);await guardarConversacion();
+  }catch(e){w.remove();historial.pop();agregarBot('⚠️ '+e.message,true);ajustarEspaciador(uEl)}
+  ocupado=false;btnEnviar.disabled=false;texto.focus();
+}
+function paraServidor(){return historial.map(m=>{if(m.role==='assistant'&&typeof m.content==='string'){const mi=m.content.match(/^\[\[imagen:([\s\S]*)\]\]$/);if(mi)return {role:'assistant',content:'(Generé una imagen a partir de: "'+mi[1].slice(0,200)+'")'}}return m})}
+
+async function abrirConversacion(id){const r=await api('/api/conversations/'+id,{headers:profileHeader()});if(!r.ok)return;const d=await r.json();anclado=false;conversationId=id;localStorage.setItem('tampy_conversation_id',id);historial=d.messages||[];chat.innerHTML='';historial.forEach(m=>m.role==='user'?renderUsuarioGuardado(m):agregarBot(m.content));cerrarDrawer();scroll.scrollTop=scroll.scrollHeight}
 async function cargarMemorias(){const r=await api('/api/memories',{headers:profileHeader()});if(!r.ok)return;const d=await r.json();const box=$('listaMemorias');box.innerHTML='';d.memories.forEach(m=>{const x=document.createElement('div');x.className='mem-item';const s=document.createElement('span');s.textContent=m.content;const b=document.createElement('button');b.type='button';b.className='small-btn';b.textContent='Eliminar';b.onclick=async()=>{await api('/api/memories/'+m.id,{method:'DELETE',headers:profileHeader()});cargarMemorias()};x.appendChild(s);x.appendChild(b);box.appendChild(x)});if(!d.memories.length)box.innerHTML='<p style="color:var(--muted)">No hay recuerdos guardados.</p>'}
 async function guardarMemoria(){const inp=$('nuevaMemoria'),v=inp.value.trim();if(!v)return;await api('/api/memories',{method:'POST',headers:{'Content-Type':'application/json',...profileHeader()},body:JSON.stringify({content:v,category:'usuario'})});inp.value='';cargarMemorias()}
 async function exportar(text,fmt){const r=await api('/api/export',{method:'POST',headers:{'Content-Type':'application/json',...profileHeader()},body:JSON.stringify({text,format:fmt,name:'TAMPY_documento'})});if(!r.ok){const d=await r.json();alert(d.error||'No se pudo generar');return}const blob=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`TAMPY_documento.${fmt}`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-function nuevaConversacion(){anclado=false;historial=[];pendientes=[];conversationId=safeUUID();try{localStorage.setItem('tampy_conversation_id',conversationId)}catch(e){}chat.innerHTML=`<div id="bienvenida"><svg><use href="#logoFull"></use></svg><div class="wordmark">TAMPI</div><h1>¿En qué te ayudo hoy?</h1><p>Escribe, sube una imagen o adjunta un documento.</p><div class="sugerencias"><button type="button" onclick="sugerir('Resume este documento en puntos clave')">Resumir un documento</button><button type="button" onclick="sugerir('Explícame qué hay en esta imagen')">Analizar una imagen</button><button type="button" onclick="sugerir('Ayúdame a redactar un correo profesional')">Redactar un correo</button><button type="button" onclick="sugerir('Revisa mi código y dime qué errores tiene')">Revisar código</button><button type="button" onclick="crearLanding()">🌐 Crear Landing Page</button><button type="button" onclick="crearDashboardMulti()">📊 Dashboard multi Excel</button></div></div>`}
+function nuevaConversacion(){cerrarDrawer();modoImagen=false;if($('btnImagen'))setModoImagen(false);anclado=false;historial=[];pendientes=[];conversationId=safeUUID();try{localStorage.setItem('tampy_conversation_id',conversationId)}catch(e){}chat.innerHTML=`<div id="bienvenida"><svg><use href="#logoFull"></use></svg><div class="wordmark">TAMPI</div><h1>¿En qué te ayudo hoy?</h1><p>Escribe, sube una imagen o adjunta un documento.</p><div class="sugerencias"><button type="button" onclick="sugerir('Resume este documento en puntos clave')">Resumir un documento</button><button type="button" onclick="sugerir('Explícame qué hay en esta imagen')">Analizar una imagen</button><button type="button" onclick="sugerir('Ayúdame a redactar un correo profesional')">Redactar un correo</button><button type="button" onclick="sugerir('Revisa mi código y dime qué errores tiene')">Revisar código</button><button type="button" onclick="crearLanding()">🌐 Crear Landing Page</button><button type="button" onclick="crearDashboardMulti()">📊 Dashboard multi Excel</button></div></div>`}
 function sugerir(t){texto.value=t;autoAltura();texto.focus()}function autoAltura(){texto.style.height='auto';texto.style.height=Math.min(texto.scrollHeight,200)+'px'}
 async function cargarConversacionActual(){try{const id=localStorage.getItem('tampy_conversation_id');if(id){const r=await api('/api/conversations/'+id,{headers:profileHeader()});if(r.ok){const d=await r.json();historial=d.messages||[];chat.innerHTML='';historial.forEach(m=>m.role==='user'?agregarUsuario(typeof m.content==='string'?m.content:'',[]):agregarBot(m.content))}}}catch(e){console.warn('No se pudo cargar la conversación',e)}}
 window.addEventListener('error',e=>console.error('TAMPY JS error:',e.error||e.message));
