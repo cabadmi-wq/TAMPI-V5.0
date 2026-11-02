@@ -101,13 +101,14 @@ main { flex: 1; overflow-y: auto; scroll-behavior: smooth; }
 .archivo-card { margin-top:12px; }
 .archivo-card .archivo-listo { margin-top:0; flex-wrap:wrap; }
 .archivo-card .archivo-listo .meta { flex:1 1 150px; min-width:0; }
-.archivo-card .archivo-listo .meta b { overflow-wrap:anywhere; }
+.archivo-card .archivo-listo .meta b { display:block; white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
 .archivo-listo .ver { border:1px solid var(--border); background:transparent; color:var(--text); border-radius:9px; padding:7px 10px; cursor:pointer; font-size:13px; }
 .vista-archivo { display:none; margin-top:8px; max-height:340px; overflow:auto; border:1px solid var(--border); border-radius:12px; padding:12px; background:var(--surface); font-size:13.5px; }
 .vista-archivo.abierta { display:block; }
 .vista-archivo pre { margin:0; }
 .nota-bot { color:var(--muted); font-size:12px; margin-top:8px; }
-header .marca { white-space: nowrap; min-width: 0; }
+header .marca { white-space: nowrap; min-width: 0; flex: 1 1 0; overflow: hidden; }
+.acciones { flex: none; }
 .marca svg { flex: none; }
 .btn-nuevo { white-space: nowrap; }
 @media (max-width: 480px) {
@@ -118,6 +119,9 @@ header .marca { white-space: nowrap; min-width: 0; }
   header > div:last-child { gap: 5px !important; }
 }
 @media (max-width: 440px) { #storageBadge { display: none; } }
+@media (max-width: 560px) { .btn-nuevo .tx { display: none; } .btn-nuevo { padding: 8px 13px; font-size: 17px; line-height: 1; } }
+.cuerpo pre { padding-top: 50px; }
+.vista-archivo pre { padding-top: 16px; }
 .msg.bot .cuerpo { flex: 1; min-width: 0; line-height: 1.7; }
 .cuerpo p { margin: 0 0 12px; }
 .cuerpo p:last-child { margin-bottom: 0; }
@@ -223,10 +227,10 @@ textarea::placeholder { color: var(--muted); }
 
 <header>
   <div class="marca"><svg><use href="#logo"/></svg> TAMPY <span id="storageBadge" style="font-size:11px;color:var(--muted);font-weight:500"></span></div>
-  <div style="display:flex;gap:8px">
-    <button class="btn-nuevo" onclick="abrirPanel('historialPanel')">💬 Historial</button>
-    <button class="btn-nuevo" onclick="abrirPanel('memoriaPanel')">🧠 Memoria</button>
-    <button class="btn-nuevo" onclick="nuevaConversacion()">+ Nueva</button>
+  <div class="acciones" style="display:flex;gap:8px">
+    <button class="btn-nuevo" aria-label="Historial" onclick="abrirPanel('historialPanel')"><span class="ic">💬</span><span class="tx"> Historial</span></button>
+    <button class="btn-nuevo" aria-label="Memoria" onclick="abrirPanel('memoriaPanel')"><span class="ic">🧠</span><span class="tx"> Memoria</span></button>
+    <button class="btn-nuevo" aria-label="Nueva conversación" onclick="nuevaConversacion()"><span class="ic">+</span><span class="tx"> Nueva</span></button>
   </div>
 </header>
 
@@ -325,7 +329,7 @@ function renderMarkdown(md){
     const html=DOMPurify.sanitize(marked.parse(md,{breaks:true}));
     const cont=document.createElement('div');cont.innerHTML=html;
     cont.querySelectorAll('a').forEach(a=>{a.target='_blank';a.rel='noopener noreferrer'});
-    cont.querySelectorAll('pre').forEach(pre=>{const cod=pre.querySelector('code');const b=document.createElement('button');b.type='button';b.className='copiar';b.textContent='Copiar';b.onclick=()=>{navigator.clipboard?.writeText((cod||pre).textContent.trim());b.textContent='¡Copiado!';setTimeout(()=>b.textContent='Copiar',1500)};pre.appendChild(b);const d=document.createElement('button');d.type='button';d.className='copiar bajar';d.textContent='⬇ Descargar';d.onclick=()=>{const i=infoCodigo(cod);descargarBlob(new Blob([(cod||pre).textContent],{type:'text/plain;charset=utf-8'}),i.nombre,false)};pre.appendChild(d)});return cont;
+    cont.querySelectorAll('pre').forEach(pre=>{const cod=pre.querySelector('code');const b=document.createElement('button');b.type='button';b.className='copiar';b.textContent='Copiar';b.onclick=()=>{navigator.clipboard?.writeText((cod||pre).textContent.trim());b.textContent='¡Copiado!';setTimeout(()=>b.textContent='Copiar',1500)};pre.appendChild(b);const d=document.createElement('button');d.type='button';d.className='copiar bajar';d.textContent='⬇ Descargar';d.onclick=()=>{const i=infoCodigo(cod);descargarBlob(new Blob([(cod||pre).textContent]),i.nombre,false)};pre.appendChild(d)});return cont;
   }
   const cont=document.createElement('div');cont.style.whiteSpace='pre-wrap';cont.textContent=md;return cont;
 }
@@ -333,7 +337,18 @@ const EXT_LANG={html:'html',xml:'xml',css:'css',javascript:'js',js:'js',typescri
 function infoCodigo(cod){
   const cls=[...(cod&&cod.classList||[])].find(c=>c.startsWith('language-'));const lang=cls?cls.slice(9):'';
   if(lang.toLowerCase().startsWith('archivo:')){const n=lang.slice(8).replace(/[^\w.\-]/g,'_');if(n)return {nombre:n}}
-  return {nombre:'tampy_codigo.'+(EXT_LANG[lang.toLowerCase()]||'txt')};
+  const cont=(cod&&cod.textContent)||'';
+  let ext=EXT_LANG[lang.toLowerCase()];
+  if(!ext&&/^\s*(<!doctype html|<html)/i.test(cont))ext='html';
+  return {nombre:nombreAuto(ext||'txt',cont)};
+}
+function nombreAuto(ext,cont){
+  const slug=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,40);
+  let base='';
+  if(ext==='html'){const m=cont.match(/<title[^>]*>([^<]{1,80})<\/title>/i);base=slug(m&&m[1])||slug((cont.match(/<h1[^>]*>([^<]{1,60})<\/h1>/i)||[])[1])}
+  else if(ext==='py'&&/Flask\(/.test(cont))base='app';
+  if(!base){const d=new Date(),p=n=>String(n).padStart(2,'0');base=({html:'pagina',py:'script',js:'script',css:'estilos',json:'datos',csv:'datos',sql:'consulta'}[ext]||'archivo')+'_'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())}
+  return base+'.'+ext;
 }
 function quitarBienvenida(){const b=$('bienvenida');if(b)b.remove()}
 function agregarUsuario(t,adj){quitarBienvenida();const div=document.createElement('div');div.className='msg user';const c=document.createElement('div');c.className='cuerpo';if(adj.length){const f=document.createElement('div');f.className='adjuntos-msg';adj.forEach(a=>{if(a.tipo==='imagen'){const im=document.createElement('img');im.src=a.dataUrl;f.appendChild(im)}else{const x=document.createElement('div');x.className='tarjeta-adj';x.innerHTML='<span class="ic">'+iconoArchivo(a.nombre)+'</span><div><span class="nm">'+esc(a.nombre)+'</span><small>'+esc((a.analisis&&a.analisis.tipo||a.nombre.split('.').pop()||'archivo').toUpperCase()+(a.size?' • '+formatoBytes(a.size):''))+'</small></div>';f.appendChild(x)}});c.appendChild(f)}if(t)c.appendChild(document.createTextNode(t));div.appendChild(c);insertar(div);bajar();return div}
@@ -409,7 +424,7 @@ async function bajarArchivo(a,btn){
       const r=await api('/api/export',{method:'POST',headers:{'Content-Type':'application/json',...profileHeader()},body:JSON.stringify({text:a.contenido,format:ext,name:a.nombre.replace(/\.[^.]+$/,'')})});
       if(!r.ok)throw new Error(await leerError(r,'No se pudo generar el archivo'));
       blob=await r.blob();
-    }else blob=new Blob([a.contenido],{type:(MIME_EXT[ext]||'text/plain')+';charset=utf-8'});
+    }else blob=new Blob([a.contenido],{type:'application/octet-stream'});
     descargarBlob(blob,a.nombre,false);
   }catch(e){alert(a.nombre+': '+e.message)}
   finally{btn.disabled=false;btn.textContent=t}
@@ -426,13 +441,26 @@ function formatoPedido(t,files){
   if(/\barchivo\b|\.(py|js|css|json|sql|csv)\b/.test(t)) for(const [f,re] of Object.entries(FMT_COD)) if(re.test(t)&&!adj.includes(f)&&!(f==='csv'&&adjExcel)) return f;
   return null;
 }
+function intentoCrear(t){return /\b(crea|cr[eé]a(me)?|haz(me)?|genera(me)?|construye|desarrolla|programa|arma(me)?|dise[ñn]a|dame|escribe|necesito|quiero)\b[\s\S]{0,60}\b(app|aplicaci[oó]n|p[aá]gina|web|sitio|landing|script|programa|herramienta|juego|calculadora|sistema|bot|formulario|dashboard|plantilla|reporte|informe|c[oó]digo)\b/i.test(t||'')}
+function convertirBloquesGrandes(resp,creacion){
+  const minLineas=creacion?6:15,usados=new Set();
+  return resp.replace(/```([\w+-]*)[ \t]*\n([\s\S]*?)```/g,(m,lang,cont)=>{
+    let ext=EXT_LANG[(lang||'').toLowerCase()];
+    if(!ext&&!lang&&/^\s*(<!doctype html|<html)/i.test(cont))ext='html';
+    if(!ext||ext==='txt'||cont.split('\n').length<minLineas)return m;
+    let nom=nombreAuto(ext,cont),k=2;while(usados.has(nom)){nom=nombreAuto(ext,cont).replace(/(\.\w+)$/,'_'+(k++)+'$1')}
+    usados.add(nom);return '```archivo:'+nom+'\n'+cont.replace(/\n$/,'')+'\n```';
+  });
+}
 function aplicarFallbackArchivo(msg,files,resp){
   if(/```archivo:/.test(resp))return resp;
-  const f=formatoPedido(msg,files);if(!f)return resp;
-  if(EXT_BIN[f])return 'Aquí tienes tu archivo.\n\n```archivo:TAMPY_documento.'+f+'\n'+resp+'\n```';
-  const m=resp.match(/```[\w+-]*\n([\s\S]*?)```/);
-  if(m)return 'Aquí tienes tu archivo.\n\n```archivo:TAMPY_archivo.'+f+'\n'+m[1].replace(/\n$/,'')+'\n```';
-  return resp;
+  const f=formatoPedido(msg,files);
+  if(f){
+    if(EXT_BIN[f])return 'Aquí tienes tu archivo.\n\n```archivo:'+nombreAuto(f,resp)+'\n'+resp+'\n```';
+    const m=resp.match(/```[\w+-]*\n([\s\S]*?)```/);
+    if(m)return 'Aquí tienes tu archivo.\n\n```archivo:'+nombreAuto(f,m[1])+'\n'+m[1].replace(/\n$/,'')+'\n```';
+  }
+  return convertirBloquesGrandes(resp,intentoCrear(msg));
 }
 function notaBot(bot,texto){const c=bot&&bot.querySelector('.cuerpo');if(!c)return;const n=document.createElement('div');n.className='nota-bot';n.textContent=texto;c.appendChild(n);ajustarEspaciador(anclaEl)}
 // Excel/CSV adjunto: dashboard o archivo corregido se generan solos según lo que pida el usuario
@@ -479,6 +507,7 @@ async function procesarArchivo(a,instruccion,auto,bot){
 }
 function parecePeticionDeCambio(t){return /\b(corrige|corregir|arregla|arreglar|limpia|limpiar|elimina|eliminar|quita|quitar|reemplaza|reemplazar|cambia|cambiar|agrega|agregar|añade|añadir|completa|completar|filtra|filtrar|ordena|ordenar|convierte|convertir|separa|separar|devu[eé]lve|devu[eé]lveme)\b|\bsin\s+(duplicados|repetidos|vac[ií]os|negativos)\b/i.test(t||'')}
 function descargarBlob(blob,nombre,mostrar=true){
+  blob=new Blob([blob],{type:'application/octet-stream'}); // evita que iOS agregue .txt al nombre
   const u=URL.createObjectURL(blob);
   if(mostrar){
     const bots=chat.querySelectorAll('.msg.bot');const bot=destinoDescarga||(bots.length?bots[bots.length-1].querySelector('.cuerpo'):chat);
